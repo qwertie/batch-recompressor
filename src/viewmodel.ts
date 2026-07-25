@@ -1,4 +1,4 @@
-import { makeAutoObservable, runInAction } from 'mobx';
+import { makeAutoObservable, runInAction, autorun } from 'mobx';
 import type {
   VideoFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
 } from '../shared/types.js';
@@ -20,6 +20,8 @@ export class ViewModel {
   /** Paths (files or folders) hidden from the tree. */
   exclusions: string[] = [];
   outputFolder = '';
+  /** Re-encode even if the output file already exists. */
+  overwrite = false;
   settings: EncodeSettings = { ...DEFAULT_SETTINGS };
   /** Per-group and per-file setting overrides, keyed by group key / file path. */
   groupOverrides = new Map<string, SettingsOverride>();
@@ -81,6 +83,8 @@ export class ViewModel {
 
   setOutputFolder(folder: string): void { this.outputFolder = folder; }
 
+  setOverwrite(v: boolean): void { this.overwrite = v; }
+
   setSetting<K extends keyof EncodeSettings>(key: K, value: EncodeSettings[K]): void {
     this.settings[key] = value;
   }
@@ -97,9 +101,18 @@ export class ViewModel {
     else overrides.set(key, o);
   }
 
-  /** Exclude a file or group; removes it from the tree. */
+  /** Exclude a file or folder path; removes it from the tree. */
   exclude(path: string): void {
     if (!this.exclusions.includes(normPath(path))) this.exclusions.push(normPath(path));
+    this.selection = { kind: 'root' };
+  }
+
+  /** Exclude every file currently in a group. */
+  excludeGroup(key: string): void {
+    for (const f of this.groupByKey(key)?.files ?? []) {
+      const p = normPath(f.path);
+      if (!this.exclusions.includes(p)) this.exclusions.push(p);
+    }
     this.selection = { kind: 'root' };
   }
 
@@ -134,6 +147,14 @@ export class ViewModel {
     }
   }
 
+  /** Re-scan all root folders, replacing their file lists (picks up new/removed files). */
+  async rescanAll(): Promise<void> {
+    for (const folder of [...this.rootFolders]) {
+      this.files = this.files.filter(f => f.rootFolder !== folder);
+      await this.addFolder(folder);
+    }
+  }
+
   removeRootFolder(folder: string): void {
     this.rootFolders = this.rootFolders.filter(r => r !== folder);
     this.files = this.files.filter(f => f.rootFolder !== folder);
@@ -147,6 +168,7 @@ export class ViewModel {
     }
     const payload = {
       outputFolder: this.outputFolder,
+      overwrite: this.overwrite,
       files: files.map(f => ({
         path: f.path, rootFolder: f.rootFolder,
         settings: this.effectiveSettings(f), kbps: f.kbps,
@@ -177,6 +199,36 @@ export class ViewModel {
 
   applyJobUpdate(state: JobState): void {
     this.jobs.set(state.path, state);
+  }
+
+  /**
+   * Load persisted settings from `storage` and save on every change.
+   * Re-scans previously added folders after loading.
+   */
+  enablePersistence(storage: Pick<Storage, 'getItem' | 'setItem'>, key = 'batch-recompressor'): void {
+    const raw = storage.getItem(key);
+    if (raw) {
+      try {
+        const s = JSON.parse(raw);
+        this.rootFolders = s.rootFolders ?? [];
+        this.exclusions = s.exclusions ?? [];
+        this.outputFolder = s.outputFolder ?? '';
+        this.overwrite = s.overwrite ?? false;
+        this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+        this.groupOverrides = new Map(s.groupOverrides ?? []);
+        this.fileOverrides = new Map(s.fileOverrides ?? []);
+      } catch { /* corrupt state: start fresh */ }
+    }
+    autorun(() => storage.setItem(key, JSON.stringify({
+      rootFolders: this.rootFolders.slice(),
+      exclusions: this.exclusions.slice(),
+      outputFolder: this.outputFolder,
+      overwrite: this.overwrite,
+      settings: { ...this.settings },
+      groupOverrides: [...this.groupOverrides.entries()],
+      fileOverrides: [...this.fileOverrides.entries()],
+    })));
+    if (this.rootFolders.length > 0) void this.rescanAll();
   }
 
   /** Subscribe to the server's SSE job-update stream. */

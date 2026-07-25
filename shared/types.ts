@@ -52,6 +52,8 @@ export const DEFAULT_SETTINGS: EncodeSettings = {
 };
 
 export interface EnqueueRequest {
+  /** If false (default), files whose output already exists are marked finished. */
+  overwrite?: boolean;
   files: {
     path: string;
     rootFolder: string;

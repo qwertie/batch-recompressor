@@ -13,6 +13,7 @@ export interface Job {
   settings: EncodeSettings;
   kbps: number;
   duration?: number;
+  overwrite?: boolean;
 }
 
 /**
@@ -22,7 +23,7 @@ export interface Job {
 export class EncodeQueue extends EventEmitter {
   private jobs = new Map<string, { job: Job; state: JobState }>();
   private pending: string[] = [];
-  private current: { path: string; proc: ChildProcess } | null = null;
+  private current: { path: string; proc: ChildProcess | null } | null = null;
 
   getStates(): JobState[] {
     return [...this.jobs.values()].map(j => j.state);
@@ -44,7 +45,7 @@ export class EncodeQueue extends EventEmitter {
     const entry = this.jobs.get(filePath);
     if (!entry) return;
     this.pending = this.pending.filter(p => p !== filePath);
-    if (this.current?.path === filePath) {
+    if (this.current?.path === filePath && this.current.proc) {
       this.current.proc.kill('SIGKILL');
       // pump() continues via the process 'close' handler
     } else if (entry.state.status === 'enqueued') {
@@ -59,6 +60,7 @@ export class EncodeQueue extends EventEmitter {
     const next = this.pending.shift();
     if (next === undefined) return;
     const entry = this.jobs.get(next)!;
+    this.current = { path: next, proc: null }; // claim the slot before any awaits
     void this.run(entry.job, entry.state);
   }
 
@@ -69,6 +71,19 @@ export class EncodeQueue extends EventEmitter {
     try {
       const outPath = outputPathFor(job.path, job.rootFolder, job.outputFolder);
       state.outputPath = outPath;
+      if (!job.overwrite) {
+        // Skip work that's already done: existing non-empty output counts as finished.
+        const existing = await fs.stat(outPath).catch(() => null);
+        if (existing && existing.size > 0) {
+          state.status = 'finished';
+          state.progress = 1;
+          state.outputSize = existing.size;
+          this.current = null;
+          this.emit('update', state);
+          this.pump();
+          return;
+        }
+      }
       await fs.mkdir(path.dirname(outPath), { recursive: true });
       const args = ffmpegArgs(job.path, outPath, job.kbps, job.settings);
       await new Promise<void>((resolve, reject) => {

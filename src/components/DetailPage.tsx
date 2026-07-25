@@ -24,6 +24,11 @@ const ExcludeList = styled('ul')`
   & li { margin: 2px 0; }
 `;
 
+const Bar = styled('div')`
+  height: 4px; background: #333; border-radius: 2px; margin-top: 2px; width: 120px;
+  & > div { height: 100%; background: #4da3ff; border-radius: 2px; }
+`;
+
 function fmtSize(bytes: number): string {
   if (bytes >= 1 << 30) return (bytes / (1 << 30)).toFixed(2) + ' GB';
   return (bytes / (1 << 20)).toFixed(1) + ' MB';
@@ -46,6 +51,11 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       </label>
       <SettingsEditor base={vm.settings}
         onChange={(k, v) => v !== undefined && vm.setSetting(k, v as never)} />
+      <label style={{ display: 'block', margin: '4px 0' }}>
+        <input type="checkbox" checked={vm.overwrite}
+          onChange={e => vm.setOverwrite(e.target.checked)} />
+        {' '}Overwrite existing output files
+      </label>
       {vm.exclusions.length > 0 && <>
         <h3>Exclusions</h3>
         <ExcludeList>
@@ -66,6 +76,7 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
   } else if (sel.kind === 'group') {
     const g = vm.groupByKey(sel.key);
     title = g?.label ?? 'Group';
+    excludeBtn = <Btn onClick={() => vm.excludeGroup(sel.key)}>Exclude this</Btn>;
     settingsEditor = <>
       <h3>Group overrides</h3>
       <SettingsEditor base={vm.settings} override={vm.groupOverrides.get(sel.key) ?? {}}
@@ -90,8 +101,18 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         ▶ Start ({files.length})
       </Btn>
       <Btn onClick={() => vm.stop()}>■ Stop / unqueue</Btn>
+      {sel.kind === 'root' && vm.rootFolders.length > 0 &&
+        <Btn onClick={() => vm.rescanAll()} disabled={vm.scanning}>
+          {vm.scanning ? 'Scanning…' : '⟳ Rescan'}
+        </Btn>}
       {excludeBtn}
     </div>
+    {files.length > 0 && <p style={{ color: '#999' }}>
+      {files.length} file{files.length === 1 ? '' : 's'},{' '}
+      {fmtSize(files.reduce((a, f) => a + f.size, 0))} total, target ~
+      {fmtSize(files.reduce((a, f) =>
+        a + f.size * targetKbps(f.kbps, vm.effectiveSettings(f)) / Math.max(1, f.kbps), 0))}
+    </p>}
     {settingsEditor}
     <Table>
       <thead><tr>
@@ -114,6 +135,8 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
                 : status === 'error' ? `error: ${job?.error}` : status}
               {status === 'finished' && job?.outputSize
                 ? ` (${fmtSize(job.outputSize)})` : ''}
+              {status === 'processing' &&
+                <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
             </StatusCell>
             <td>
               {sel.kind !== 'file' &&

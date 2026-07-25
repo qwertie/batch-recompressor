@@ -28,8 +28,9 @@ const Sidebar = styled('div')`
 export const App = observer(function App(props: { vm?: ViewModel }) {
   const vm = useMemo(() => props.vm ?? new ViewModel(), [props.vm]);
   useEffect(() => {
+    if (!props.vm) vm.enablePersistence(localStorage); // tests pass their own vm
     if (typeof EventSource !== 'undefined') vm.connectEvents();
-  }, [vm]);
+  }, [vm, props.vm]);
   return <Layout>
     <Sidebar><Tree vm={vm} /></Sidebar>
     <DetailPage vm={vm} />

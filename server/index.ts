@@ -40,6 +40,7 @@ app.post('/api/enqueue', (req, res) => {
       settings: f.settings,
       kbps: f.kbps,
       duration: body.durations?.[f.path],
+      overwrite: body.overwrite,
     });
   }
   res.json({ ok: true });
