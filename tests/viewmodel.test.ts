@@ -1,20 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ViewModel } from '../src/viewmodel.js';
-import type { VideoFileInfo } from '../shared/types.js';
-
-function file(path: string, kbps = 2000): VideoFileInfo {
-  return {
-    path, rootFolder: '/in', width: 1920, height: 1080, fps: 30,
-    kbps, size: 1e8, duration: 60, codec: 'h264',
-  };
-}
-
-function fakeFetch(scanResult: VideoFileInfo[] = []) {
-  return vi.fn(async (url: RequestInfo | URL) => ({
-    ok: true,
-    json: async () => (String(url).includes('/api/scan') ? scanResult : { ok: true }),
-  })) as unknown as typeof fetch;
-}
+import { file, fakeFetch } from './helpers.js';
 
 describe('ViewModel', () => {
   it('addFolder scans and populates files and groups', async () => {
@@ -22,7 +8,7 @@ describe('ViewModel', () => {
     await vm.addFolder('/in');
     expect(vm.rootFolders).toEqual(['/in']);
     expect(vm.files).toHaveLength(2);
-    expect(vm.groups).toHaveLength(2); // bitrates >30% apart
+    expect(vm.groups).toHaveLength(2); // densities >30% apart
   });
 
   it('exclude removes a file from the tree and adds it to the list', async () => {
@@ -57,7 +43,7 @@ describe('ViewModel', () => {
     expect(vm.effectiveSettings(f).compressionRatio).toBe(6);
   });
 
-  it('start enqueues the selection and marks jobs enqueued', async () => {
+  it('start enqueues the selection with file info and effective settings', async () => {
     const fetcher = fakeFetch([file('/in/a.mp4')]);
     const vm = new ViewModel(fetcher);
     await vm.addFolder('/in');
@@ -67,7 +53,9 @@ describe('ViewModel', () => {
     const call = (fetcher as any).mock.calls.find((c: any[]) => String(c[0]).includes('enqueue'));
     const body = JSON.parse(call[1].body);
     expect(body.outputFolder).toBe('/out');
-    expect(body.files[0].settings.codec).toBe('av1');
+    expect(body.files[0].info.path).toBe('/in/a.mp4');
+    expect(body.files[0].info.kind).toBe('video');
+    expect(body.files[0].settings.videoCodec).toBe('av1');
   });
 
   it('start without an output folder sets an error', async () => {
@@ -85,5 +73,17 @@ describe('ViewModel', () => {
     expect(vm.selectedFiles).toHaveLength(1);
     vm.select({ kind: 'file', path: '/in/b.mp4' });
     expect(vm.selectedFiles.map(f => f.path)).toEqual(['/in/b.mp4']);
+  });
+
+  it('scan passes only the enabled extensions', async () => {
+    const fetcher = fakeFetch([]);
+    const vm = new ViewModel(fetcher);
+    vm.setExtEnabled('.mp4', false);
+    await vm.addFolder('/in');
+    const call = (fetcher as any).mock.calls[0];
+    const exts = JSON.parse(call[1].body).extensions;
+    expect(exts).not.toContain('.mp4');
+    expect(exts).toContain('.mkv');
+    expect(exts).toContain('.jpg');
   });
 });

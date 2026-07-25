@@ -11,35 +11,32 @@ app.use(express.json({ limit: '50mb' }));
 
 const queue = new EncodeQueue();
 
-// POST /api/scan { folder, outputFolder, exclusions } -> VideoFileInfo[]
+// POST /api/scan { folder, outputFolder, exclusions, extensions } -> MediaFileInfo[]
 app.post('/api/scan', async (req, res) => {
-  const { folder, outputFolder = '', exclusions = [] } = req.body ?? {};
+  const { folder, outputFolder = '', exclusions = [], extensions } = req.body ?? {};
   if (!folder || !fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
     res.status(400).json({ error: `Not a folder: ${folder}` });
     return;
   }
   try {
-    res.json(await scanFolder(folder, outputFolder, exclusions));
+    res.json(await scanFolder(folder, outputFolder, exclusions, extensions));
   } catch (err: any) {
     res.status(500).json({ error: String(err.message ?? err) });
   }
 });
 
-// POST /api/enqueue { files: [...], outputFolder } — add jobs to the queue
+// POST /api/enqueue { files: [{info, settings}], outputFolder } — add jobs to the queue
 app.post('/api/enqueue', (req, res) => {
-  const body = req.body as EnqueueRequest & { durations?: Record<string, number> };
+  const body = req.body as EnqueueRequest;
   if (!body?.outputFolder) {
     res.status(400).json({ error: 'outputFolder is required' });
     return;
   }
   for (const f of body.files ?? []) {
     queue.enqueue({
-      path: f.path,
-      rootFolder: f.rootFolder,
+      info: f.info,
       outputFolder: body.outputFolder,
       settings: f.settings,
-      kbps: f.kbps,
-      duration: body.durations?.[f.path],
       overwrite: body.overwrite,
     });
   }

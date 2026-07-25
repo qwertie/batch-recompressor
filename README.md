@@ -1,21 +1,28 @@
 # Batch Recompressor
 
-A local web app for recompressing video files in batch with ffmpeg. Add folders,
-and their videos are scanned (via ffprobe) and grouped by resolution, framerate
-and approximate bitrate. Set a global target compression ratio (default 4x
-smaller), override settings per group or per file, and start a sequential
-encode queue. Output files mirror the input folder structure under the output
-folder. Built with React 18, TypeScript, MobX and goober (CSS-in-JS), with a
-small Express backend that does the scanning and runs ffmpeg.
+A local web app for recompressing video, image and audio files in batch with
+ffmpeg. Add folders, and their media files are scanned (via ffprobe, which
+also classifies ambiguous containers) and grouped by kind, resolution,
+framerate (each toggleable) and *compression density* — a normalized unit
+where ~1 is typical: bits per pixel·second for video, bits per pixel for
+images, bits per sample·channel for audio. Set a global target compression
+ratio (default 4x smaller) with density limits, or prefer a quality setting
+(always used for image formats), override settings per group or per file,
+and start a sequential encode queue. Output files mirror the input folder
+structure under the output folder. Built with React 18, TypeScript, MobX and
+goober (CSS-in-JS), with a small Express backend that does the scanning and
+runs ffmpeg.
 
 ## Requirements
 
-- Node.js 22+
-- `ffmpeg` and `ffprobe` on your PATH (with libsvtav1 for the default AV1 codec).
-  `npm run dev` / `npm start` check for them and offer to install via your
-  package manager (winget/choco/scoop, brew, or apt/dnf/pacman) if missing.
+- Node.js 22+ must be installed and on your PATH.
+- If `ffmpeg` and `ffprobe` are not on your PATH, `npm run dev` / `npm start` check for 
+  them and offer to install via your package manager (winget/choco/scoop, brew, or 
+  apt/dnf/pacman) if missing. The app expects libsvtav1 for the default AV1 codec.
 
 ## Build & start
+
+On Windows you should be able to just double-click `install-and-run.bat` (if ffmpeg is installed the first time, run it again). Or in terminal:
 
 ```sh
 npm install

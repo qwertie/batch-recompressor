@@ -1,22 +1,32 @@
 // Types shared between server and client.
 
-export interface VideoFileInfo {
+export type MediaKind = 'video' | 'image' | 'audio';
+
+export interface MediaFileInfo {
   /** Absolute path of the source file. */
   path: string;
   /** The root folder (as added via "Add folder") this file was found under. */
   rootFolder: string;
+  kind: MediaKind;
+  /** Video/image dimensions; 0 for audio. */
   width: number;
   height: number;
-  /** Frames per second, rounded to 3 decimals. */
+  /** Frames per second, rounded to 3 decimals; 0 for image/audio. */
   fps: number;
-  /** Overall bitrate in kbps. */
+  /** Audio sample rate in Hz and channel count; 0 for video/image. */
+  sampleRate: number;
+  channels: number;
+  /** Overall bitrate in kbps (0 for images). */
   kbps: number;
   /** File size in bytes. */
   size: number;
-  /** Duration in seconds. */
+  /** Duration in seconds (0 for images). */
   duration: number;
   codec: string;
 }
+
+/** @deprecated old name, kept for less churn */
+export type VideoFileInfo = MediaFileInfo;
 
 export type JobStatus = 'notQueued' | 'enqueued' | 'processing' | 'finished' | 'error';
 
@@ -30,12 +40,25 @@ export interface JobState {
   outputSize?: number;
 }
 
+export type RateMode = 'bitrate' | 'quality';
+
 export interface EncodeSettings {
   /** Target size ratio: output should be ~originalSize / ratio. */
   compressionRatio: number;
-  minKbps: number;
-  maxKbps: number;
-  codec: 'av1' | 'hevc' | 'h264';
+  /**
+   * Min/max compression density in normalized units where ~1 is typical:
+   * video = bits/(pixel·second), image = bits/pixel,
+   * audio = bits/(sample·channel). Used in bitrate mode.
+   */
+  minDensity: number;
+  maxDensity: number;
+  /** Prefer a target bitrate (n/a for images) or a quality setting. */
+  rateMode: RateMode;
+  /** 0 (worst) .. 100 (best); used in quality mode and always for images. */
+  quality: number;
+  videoCodec: 'av1' | 'hevc' | 'h264';
+  imageFormat: 'webp' | 'jpeg' | 'avif';
+  audioCodec: 'opus' | 'aac' | 'mp3';
   /** 0 (fastest) .. 10 (slowest/best). */
   effort: number;
 }
@@ -45,9 +68,13 @@ export type SettingsOverride = Partial<EncodeSettings>;
 
 export const DEFAULT_SETTINGS: EncodeSettings = {
   compressionRatio: 4,
-  minKbps: 300,
-  maxKbps: 8000,
-  codec: 'av1',
+  minDensity: 0.05,
+  maxDensity: 4,
+  rateMode: 'bitrate',
+  quality: 75,
+  videoCodec: 'av1',
+  imageFormat: 'webp',
+  audioCodec: 'opus',
   effort: 6,
 };
 
@@ -55,10 +82,8 @@ export interface EnqueueRequest {
   /** If false (default), files whose output already exists are marked finished. */
   overwrite?: boolean;
   files: {
-    path: string;
-    rootFolder: string;
+    info: MediaFileInfo;
     settings: EncodeSettings;
-    kbps: number;
   }[];
   outputFolder: string;
 }

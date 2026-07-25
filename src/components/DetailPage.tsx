@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { styled } from '../styled.js';
 import type { ViewModel } from '../viewmodel.js';
 import { SettingsEditor } from './SettingsEditor.js';
-import { targetKbps } from '../../shared/encode.js';
+import { FileTypeTree } from './FileTypeTree.js';
+import { density, densityUnit, estimatedSize, supportsQualityMode } from '../../shared/encode.js';
 
 const Page = styled('div')`flex: 1; padding: 12px 16px; overflow: auto;`;
 const Btn = styled('button')`
@@ -38,12 +40,37 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
   const { vm } = props;
   const sel = vm.selection;
   const files = vm.selectedFiles;
+  const [folderInput, setFolderInput] = useState('');
+  const addFolder = () => { if (folderInput) { vm.addFolder(folderInput); setFolderInput(''); } };
 
   let title = 'All files';
   let settingsEditor;
   let excludeBtn = null;
   if (sel.kind === 'root') {
     settingsEditor = <>
+      <h3>Add media</h3>
+      <div>
+        <input placeholder="Folder to add…" value={folderInput} size={40}
+          onChange={e => setFolderInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addFolder(); }} />
+        {' '}
+        <Btn disabled={vm.scanning || !folderInput} onClick={addFolder}>
+          {vm.scanning ? 'Scanning…' : 'Add folder'}
+        </Btn>
+      </div>
+      <h3>File types to scan</h3>
+      <FileTypeTree vm={vm} />
+      <h3>Grouping</h3>
+      <label style={{ marginRight: 16 }}>
+        <input type="checkbox" checked={vm.grouping.byResolution}
+          onChange={e => vm.setGrouping('byResolution', e.target.checked)} />
+        {' '}Group by resolution
+      </label>
+      <label>
+        <input type="checkbox" checked={vm.grouping.byFps}
+          onChange={e => vm.setGrouping('byFps', e.target.checked)} />
+        {' '}Group by framerate
+      </label>
       <h3>Global settings</h3>
       <label>Output folder{' '}
         <input size={50} value={vm.outputFolder} placeholder="e.g. C:/Recompressed"
@@ -110,13 +137,13 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
     {files.length > 0 && <p style={{ color: '#999' }}>
       {files.length} file{files.length === 1 ? '' : 's'},{' '}
       {fmtSize(files.reduce((a, f) => a + f.size, 0))} total, target ~
-      {fmtSize(files.reduce((a, f) =>
-        a + f.size * targetKbps(f.kbps, vm.effectiveSettings(f)) / Math.max(1, f.kbps), 0))}
+      {fmtSize(files.reduce((a, f) => a + estimatedSize(f, vm.effectiveSettings(f)), 0))}
+      {' '}(bitrate mode estimate)
     </p>}
     {settingsEditor}
     <Table>
       <thead><tr>
-        <th>File</th><th>Size</th><th>Bitrate</th><th>Target</th><th>Status</th><th></th>
+        <th>File</th><th>Size</th><th>Density</th><th>Target</th><th>Status</th><th></th>
       </tr></thead>
       <tbody>
         {files.map(f => {
@@ -127,8 +154,10 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
             <td style={{ wordBreak: 'break-all', cursor: 'pointer' }}
               onClick={() => vm.select({ kind: 'file', path: f.path })}>{f.path}</td>
             <td>{fmtSize(f.size)}</td>
-            <td>{f.kbps} kbps</td>
-            <td>{targetKbps(f.kbps, eff)} kbps</td>
+            <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
+            <td>{f.kind !== 'image' && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff))
+              ? `~${fmtSize(estimatedSize(f, eff))}`
+              : `quality ${eff.quality}`}</td>
             <StatusCell status={status}>
               {status === 'processing'
                 ? `processing ${Math.round((job?.progress ?? 0) * 100)}%`

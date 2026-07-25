@@ -1,44 +1,38 @@
 // Basic UI smoke tests (no end-to-end): render the app with a fake fetch,
 // add a folder, and check that the tree and detail page respond.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../src/App.js';
 import { ViewModel } from '../src/viewmodel.js';
-import type { VideoFileInfo } from '../shared/types.js';
+import { file, fakeFetch } from './helpers.js';
+import type { MediaFileInfo } from '../shared/types.js';
 
-function file(path: string, kbps = 2000): VideoFileInfo {
-  return {
-    path, rootFolder: '/in', width: 1920, height: 1080, fps: 30,
-    kbps, size: 1e8, duration: 60, codec: 'h264',
-  };
-}
-
-function makeVM(scanResult: VideoFileInfo[]) {
-  const fetcher = vi.fn(async (url: RequestInfo | URL) => ({
-    ok: true,
-    json: async () => (String(url).includes('/api/scan') ? scanResult : { ok: true }),
-  })) as unknown as typeof fetch;
-  return new ViewModel(fetcher);
+function makeVM(scanResult: MediaFileInfo[]) {
+  return new ViewModel(fakeFetch(scanResult));
 }
 
 describe('App', () => {
-  it('renders the root page with global settings and Add folder button', () => {
+  it('renders the root page with settings, rate-mode radios and Add folder', () => {
     render(<App vm={makeVM([])} />);
     expect(screen.getByText('Add folder')).toBeTruthy();
     expect(screen.getAllByText('All files').length).toBeGreaterThan(0); // tree node + page title
     expect(screen.getByText(/Compression ratio/)).toBeTruthy();
+    expect(screen.getByText('Prefer target rate')).toBeTruthy();
+    expect(screen.getByText('Prefer quality setting')).toBeTruthy();
+    expect(screen.getByText('Group by resolution')).toBeTruthy();
+    expect(screen.getByText(/🖼 Images/)).toBeTruthy(); // file-type tree roots
+    expect(screen.getByText(/🔊 Audio/)).toBeTruthy();
   });
 
-  it('adds a folder and shows a bitrate group in the tree', async () => {
-    const vm = makeVM([file('/in/sub/a.mp4', 2204)]);
+  it('adds a folder and shows a density group in the tree', async () => {
+    const vm = makeVM([file('/in/sub/a.mp4', 2000)]);
     render(<App vm={vm} />);
     fireEvent.change(screen.getByPlaceholderText('Folder to add…'), {
       target: { value: '/in' },
     });
     fireEvent.click(screen.getByText('Add folder'));
     await waitFor(() =>
-      expect(screen.getByText('1920x1080x30 ~2204 kbps')).toBeTruthy());
-    // File row appears in the root page's flat list too
+      expect(screen.getByText('1920x1080x30 ~0.96 b/px·s')).toBeTruthy());
     expect(screen.getAllByText('/in/sub/a.mp4').length).toBeGreaterThan(0);
   });
 
@@ -52,5 +46,14 @@ describe('App', () => {
     expect(vm.visibleFiles).toHaveLength(0);
     fireEvent.click(screen.getAllByText('Remove')[0]); // first Remove = exclusion entry
     await waitFor(() => expect(vm.visibleFiles).toHaveLength(1));
+  });
+
+  it('unchecking "Group by framerate" merges fps-differing groups', async () => {
+    const vm = makeVM([file('/in/a.mp4', 2000, { fps: 30 }), file('/in/b.mp4', 2000, { fps: 60 })]);
+    render(<App vm={vm} />);
+    await vm.addFolder('/in');
+    await waitFor(() => expect(vm.groups).toHaveLength(2));
+    fireEvent.click(screen.getByLabelText(/Group by framerate/));
+    await waitFor(() => expect(vm.groups).toHaveLength(1));
   });
 });

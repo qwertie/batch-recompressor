@@ -2,17 +2,14 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
-import type { EncodeSettings, JobState } from '../shared/types.js';
+import type { EncodeSettings, JobState, MediaFileInfo } from '../shared/types.js';
 import { outputPathFor } from '../shared/paths.js';
-import { ffmpegArgs } from '../shared/encode.js';
+import { ffmpegArgs, outputExt } from '../shared/encode.js';
 
 export interface Job {
-  path: string;
-  rootFolder: string;
+  info: MediaFileInfo;
   outputFolder: string;
   settings: EncodeSettings;
-  kbps: number;
-  duration?: number;
   overwrite?: boolean;
 }
 
@@ -30,12 +27,13 @@ export class EncodeQueue extends EventEmitter {
   }
 
   enqueue(job: Job): void {
-    const existing = this.jobs.get(job.path);
+    const key = job.info.path;
+    const existing = this.jobs.get(key);
     if (existing && (existing.state.status === 'enqueued' || existing.state.status === 'processing'))
       return;
-    const state: JobState = { path: job.path, status: 'enqueued', progress: 0 };
-    this.jobs.set(job.path, { job, state });
-    this.pending.push(job.path);
+    const state: JobState = { path: key, status: 'enqueued', progress: 0 };
+    this.jobs.set(key, { job, state });
+    this.pending.push(key);
     this.emit('update', state);
     this.pump();
   }
@@ -65,11 +63,13 @@ export class EncodeQueue extends EventEmitter {
   }
 
   private async run(job: Job, state: JobState): Promise<void> {
+    const f = job.info;
     state.status = 'processing';
     state.progress = 0;
     this.emit('update', state);
     try {
-      const outPath = outputPathFor(job.path, job.rootFolder, job.outputFolder);
+      const outPath = outputPathFor(
+        f.path, f.rootFolder, job.outputFolder, outputExt(f.kind, job.settings));
       state.outputPath = outPath;
       if (!job.overwrite) {
         // Skip work that's already done: existing non-empty output counts as finished.
@@ -85,10 +85,10 @@ export class EncodeQueue extends EventEmitter {
         }
       }
       await fs.mkdir(path.dirname(outPath), { recursive: true });
-      const args = ffmpegArgs(job.path, outPath, job.kbps, job.settings);
+      const args = ffmpegArgs(f, outPath, job.settings);
       await new Promise<void>((resolve, reject) => {
         const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        this.current = { path: job.path, proc };
+        this.current = { path: f.path, proc };
         let stderrTail = '';
         proc.stderr!.on('data', (d: Buffer) => {
           stderrTail = (stderrTail + d.toString()).slice(-2000);
@@ -96,8 +96,8 @@ export class EncodeQueue extends EventEmitter {
         proc.stdout!.on('data', (d: Buffer) => {
           // -progress pipe:1 emits key=value lines including out_time_us
           const m = /out_time_us=(\d+)/.exec(d.toString());
-          if (m && job.duration) {
-            state.progress = Math.min(1, Number(m[1]) / 1e6 / job.duration);
+          if (m && f.duration > 0) {
+            state.progress = Math.min(1, Number(m[1]) / 1e6 / f.duration);
             this.emit('update', state);
           }
         });

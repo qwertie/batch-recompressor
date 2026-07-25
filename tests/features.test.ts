@@ -1,21 +1,7 @@
-// Tests for second-round features: persistence, group exclusion, rescan, overwrite flag.
+// Tests for persistence, group exclusion, rescan, overwrite flag.
 import { describe, it, expect, vi } from 'vitest';
 import { ViewModel } from '../src/viewmodel.js';
-import type { VideoFileInfo } from '../shared/types.js';
-
-function file(path: string, kbps = 2000): VideoFileInfo {
-  return {
-    path, rootFolder: '/in', width: 1920, height: 1080, fps: 30,
-    kbps, size: 1e8, duration: 60, codec: 'h264',
-  };
-}
-
-function fakeFetch(scanResult: VideoFileInfo[] = []) {
-  return vi.fn(async (url: RequestInfo | URL) => ({
-    ok: true,
-    json: async () => (String(url).includes('/api/scan') ? scanResult : { ok: true }),
-  })) as unknown as typeof fetch;
-}
+import { file, fakeFetch } from './helpers.js';
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -26,7 +12,7 @@ function memoryStorage() {
 }
 
 describe('persistence', () => {
-  it('round-trips settings, exclusions and overrides through storage', async () => {
+  it('round-trips settings, grouping, extensions, exclusions and overrides', async () => {
     const storage = memoryStorage();
     const vm1 = new ViewModel(fakeFetch([file('/in/a.mp4')]));
     vm1.enablePersistence(storage);
@@ -34,6 +20,9 @@ describe('persistence', () => {
     vm1.setOutputFolder('/out');
     vm1.setOverwrite(true);
     vm1.setSetting('compressionRatio', 5);
+    vm1.setSetting('rateMode', 'quality');
+    vm1.setGrouping('byFps', false);
+    vm1.setExtEnabled('.gif', false);
     vm1.exclude('/in/x.mp4');
     vm1.setOverride('file', '/in/a.mp4', 'effort', 9);
 
@@ -42,11 +31,13 @@ describe('persistence', () => {
     expect(vm2.outputFolder).toBe('/out');
     expect(vm2.overwrite).toBe(true);
     expect(vm2.settings.compressionRatio).toBe(5);
+    expect(vm2.settings.rateMode).toBe('quality');
+    expect(vm2.grouping.byFps).toBe(false);
+    expect(vm2.enabledExts).not.toContain('.gif');
     expect(vm2.exclusions).toEqual(['/in/x.mp4']);
     expect(vm2.fileOverrides.get('/in/a.mp4')).toEqual({ effort: 9 });
     expect(vm2.rootFolders).toEqual(['/in']);
-    await Promise.resolve(); // rescan kicked off automatically
-    await vi.waitFor(() => expect(vm2.files).toHaveLength(1));
+    await vi.waitFor(() => expect(vm2.files).toHaveLength(1)); // auto-rescan
   });
 });
 

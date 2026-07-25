@@ -17,9 +17,6 @@ const Indent = styled('div')`margin-left: 16px;`;
 const Toggle = styled('span')`
   display: inline-block; width: 14px; user-select: none; color: #888;
 `;
-const AddBtn = styled('button')`
-  margin: 4px 0; padding: 2px 8px; cursor: pointer;
-`;
 
 /** A folder-hierarchy node built from file paths relative to a root folder. */
 interface DirNode {
@@ -83,7 +80,6 @@ const DirTreeView = observer(function DirTreeView(props: { vm: ViewModel; node: 
 
 export const Tree = observer(function Tree(props: { vm: ViewModel }) {
   const { vm } = props;
-  const [folderInput, setFolderInput] = useState('');
   const isSel = (s: Selection) => JSON.stringify(s) === JSON.stringify(vm.selection);
   return <div>
     <Expandable label={<b>All files</b>} selected={isSel({ kind: 'root' })}
@@ -105,14 +101,5 @@ export const Tree = observer(function Tree(props: { vm: ViewModel }) {
         </Expandable>;
       })}
     </Expandable>
-    <div style={{ marginTop: 8 }}>
-      <input placeholder="Folder to add…" value={folderInput} size={24}
-        onChange={e => setFolderInput(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') { vm.addFolder(folderInput); setFolderInput(''); } }} />
-      <AddBtn disabled={vm.scanning || !folderInput}
-        onClick={() => { vm.addFolder(folderInput); setFolderInput(''); }}>
-        {vm.scanning ? 'Scanning…' : 'Add folder'}
-      </AddBtn>
-    </div>
   </div>;
 });

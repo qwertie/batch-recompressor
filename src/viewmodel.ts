@@ -1,9 +1,10 @@
 import { makeAutoObservable, runInAction, autorun } from 'mobx';
 import type {
-  VideoFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
+  MediaFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
 } from '../shared/types.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
-import { groupFiles, type FileGroup } from '../shared/grouping.js';
+import { groupFiles, DEFAULT_GROUPING, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
+import { ALL_EXTENSIONS } from '../shared/filetypes.js';
 import { isExcluded, normPath } from '../shared/paths.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
@@ -15,14 +16,17 @@ export type Selection =
 export class ViewModel {
   /** Root folders added with the "Add folder" button. */
   rootFolders: string[] = [];
-  /** All scanned (non-excluded) video files. */
-  files: VideoFileInfo[] = [];
+  /** All scanned (non-excluded) media files. */
+  files: MediaFileInfo[] = [];
   /** Paths (files or folders) hidden from the tree. */
   exclusions: string[] = [];
   outputFolder = '';
   /** Re-encode even if the output file already exists. */
   overwrite = false;
   settings: EncodeSettings = { ...DEFAULT_SETTINGS };
+  grouping: GroupingOptions = { ...DEFAULT_GROUPING };
+  /** File extensions (lowercase, with dot) enabled for scanning. */
+  enabledExts: string[] = [...ALL_EXTENSIONS];
   /** Per-group and per-file setting overrides, keyed by group key / file path. */
   groupOverrides = new Map<string, SettingsOverride>();
   fileOverrides = new Map<string, SettingsOverride>();
@@ -38,24 +42,24 @@ export class ViewModel {
 
   // ---- derived state ----
 
-  get visibleFiles(): VideoFileInfo[] {
+  get visibleFiles(): MediaFileInfo[] {
     return this.files.filter(f => !isExcluded(f.path, this.outputFolder, this.exclusions));
   }
 
   get groups(): FileGroup[] {
-    return groupFiles(this.visibleFiles);
+    return groupFiles(this.visibleFiles, this.grouping);
   }
 
   groupByKey(key: string): FileGroup | undefined {
     return this.groups.find(g => g.key === key);
   }
 
-  fileByPath(path: string): VideoFileInfo | undefined {
+  fileByPath(path: string): MediaFileInfo | undefined {
     return this.files.find(f => f.path === path);
   }
 
   /** Effective settings for a file: global <- group override <- file override. */
-  effectiveSettings(file: VideoFileInfo): EncodeSettings {
+  effectiveSettings(file: MediaFileInfo): EncodeSettings {
     const group = this.groups.find(g => g.files.some(f => f.path === file.path));
     return {
       ...this.settings,
@@ -69,7 +73,7 @@ export class ViewModel {
   }
 
   /** Files shown on the currently selected page. */
-  get selectedFiles(): VideoFileInfo[] {
+  get selectedFiles(): MediaFileInfo[] {
     const sel = this.selection;
     if (sel.kind === 'root') return this.visibleFiles;
     if (sel.kind === 'group') return this.groupByKey(sel.key)?.files ?? [];
@@ -84,6 +88,13 @@ export class ViewModel {
   setOutputFolder(folder: string): void { this.outputFolder = folder; }
 
   setOverwrite(v: boolean): void { this.overwrite = v; }
+
+  setGrouping(field: keyof GroupingOptions, v: boolean): void { this.grouping[field] = v; }
+
+  setExtEnabled(ext: string, enabled: boolean): void {
+    if (enabled && !this.enabledExts.includes(ext)) this.enabledExts.push(ext);
+    if (!enabled) this.enabledExts = this.enabledExts.filter(e => e !== ext);
+  }
 
   setSetting<K extends keyof EncodeSettings>(key: K, value: EncodeSettings[K]): void {
     this.settings[key] = value;
@@ -130,13 +141,14 @@ export class ViewModel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           folder, outputFolder: this.outputFolder, exclusions: this.exclusions,
+          extensions: this.enabledExts.slice(),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? res.statusText);
       runInAction(() => {
         if (!this.rootFolders.includes(folder)) this.rootFolders.push(folder);
-        const newFiles = (data as VideoFileInfo[])
+        const newFiles = (data as MediaFileInfo[])
           .filter(f => !this.files.some(x => x.path === f.path));
         this.files.push(...newFiles);
       });
@@ -161,7 +173,7 @@ export class ViewModel {
   }
 
   /** Enqueue the given files (defaults to the current selection). */
-  async start(files: VideoFileInfo[] = this.selectedFiles): Promise<void> {
+  async start(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
     if (!this.outputFolder) {
       this.error = 'Set an output folder first.';
       return;
@@ -169,11 +181,7 @@ export class ViewModel {
     const payload = {
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
-      files: files.map(f => ({
-        path: f.path, rootFolder: f.rootFolder,
-        settings: this.effectiveSettings(f), kbps: f.kbps,
-      })),
-      durations: Object.fromEntries(files.map(f => [f.path, f.duration])),
+      files: files.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
     };
     await this.fetcher('/api/enqueue', {
       method: 'POST',
@@ -189,7 +197,7 @@ export class ViewModel {
     });
   }
 
-  async stop(files: VideoFileInfo[] = this.selectedFiles): Promise<void> {
+  async stop(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
     await this.fetcher('/api/unqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -215,6 +223,8 @@ export class ViewModel {
         this.outputFolder = s.outputFolder ?? '';
         this.overwrite = s.overwrite ?? false;
         this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+        this.grouping = { ...DEFAULT_GROUPING, ...s.grouping };
+        this.enabledExts = s.enabledExts ?? [...ALL_EXTENSIONS];
         this.groupOverrides = new Map(s.groupOverrides ?? []);
         this.fileOverrides = new Map(s.fileOverrides ?? []);
       } catch { /* corrupt state: start fresh */ }
@@ -225,6 +235,8 @@ export class ViewModel {
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
       settings: { ...this.settings },
+      grouping: { ...this.grouping },
+      enabledExts: this.enabledExts.slice(),
       groupOverrides: [...this.groupOverrides.entries()],
       fileOverrides: [...this.fileOverrides.entries()],
     })));
