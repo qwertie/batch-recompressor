@@ -5,6 +5,7 @@ import type { ViewModel } from '../viewmodel.js';
 import { SettingsEditor } from './SettingsEditor.js';
 import { FileTypeTree } from './FileTypeTree.js';
 import { density, densityUnit, estimatedSize, supportsQualityMode } from '../../shared/encode.js';
+import { Tip, DensityTip } from './Tip.js';
 
 const Page = styled('div')`flex: 1; padding: 12px 16px; overflow: auto;`;
 const Btn = styled('button')`
@@ -60,7 +61,14 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       </div>
       <h3>File types to scan</h3>
       <FileTypeTree vm={vm} />
-      <h3>Grouping</h3>
+      <h3><Tip tip={<span>
+        Files always group by media kind and by compression density (splitting
+        when two files differ by more than 30%, e.g. 0.9 and 1.3 b/px·s end up
+        apart). {DensityTip} These checkboxes additionally split groups by
+        resolution (sample rate/channels for audio) and framerate — untick
+        both to group purely by density, e.g. putting a 720p and a 1080p video
+        with similar density together.
+      </span>}>Grouping</Tip></h3>
       <label style={{ marginRight: 16 }}>
         <input type="checkbox" checked={vm.grouping.byResolution}
           onChange={e => vm.setGrouping('byResolution', e.target.checked)} />
@@ -72,7 +80,13 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         {' '}Group by framerate
       </label>
       <h3>Global settings</h3>
-      <label>Output folder{' '}
+      <label><Tip tip={<span>
+        Outputs mirror the input structure: if you added <code>C:\A\B</code>,
+        then <code>C:\A\B\C\D.mp4</code> is written to
+        <code> &lt;output&gt;\C\D.mkv</code>. Files already inside the output
+        folder are excluded from scanning, so it's safe to put it under an
+        input folder.
+      </span>}>Output folder</Tip>{' '}
         <input size={50} value={vm.outputFolder} placeholder="e.g. C:/Recompressed"
           onChange={e => vm.setOutputFolder(e.target.value)} />
       </label>
@@ -81,7 +95,12 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       <label style={{ display: 'block', margin: '4px 0' }}>
         <input type="checkbox" checked={vm.overwrite}
           onChange={e => vm.setOverwrite(e.target.checked)} />
-        {' '}Overwrite existing output files
+        {' '}<Tip tip={<span>
+          When unchecked, a file whose output already exists is marked
+          finished without re-encoding — so you can re-run a big batch and
+          only new files are processed. Check this to re-encode everything,
+          e.g. after changing quality settings.
+        </span>}>Overwrite existing output files</Tip>
       </label>
       {vm.exclusions.length > 0 && <>
         <h3>Exclusions</h3>
@@ -143,7 +162,15 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
     {settingsEditor}
     <Table>
       <thead><tr>
-        <th>File</th><th>Size</th><th>Density</th><th>Target</th><th>Status</th><th></th>
+        <th>File</th><th>Size</th>
+        <th><Tip tip={DensityTip}>Density</Tip></th>
+        <th><Tip tip={<span>
+          What the encode aims for: an estimated output size in target-rate
+          mode (input density ÷ ratio, clamped to the limits — e.g. a 100 MB
+          video at ratio 4 shows ~25 MB), or the quality setting when that
+          mode applies (always for images).
+        </span>}>Target</Tip></th>
+        <th>Status</th><th></th>
       </tr></thead>
       <tbody>
         {files.map(f => {

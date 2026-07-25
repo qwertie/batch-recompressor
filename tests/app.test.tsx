@@ -17,8 +17,9 @@ describe('App', () => {
     expect(screen.getByText('Add folder')).toBeTruthy();
     expect(screen.getAllByText('All files').length).toBeGreaterThan(0); // tree node + page title
     expect(screen.getByText(/Compression ratio/)).toBeTruthy();
-    expect(screen.getByText('Prefer target rate')).toBeTruthy();
-    expect(screen.getByText('Prefer quality setting')).toBeTruthy();
+    // These also appear inside tooltip bubbles, hence getAllByText
+    expect(screen.getAllByText('Prefer target rate').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Prefer quality setting').length).toBeGreaterThan(0);
     expect(screen.getByText('Group by resolution')).toBeTruthy();
     expect(screen.getByText(/🖼 Images/)).toBeTruthy(); // file-type tree roots
     expect(screen.getByText(/🔊 Audio/)).toBeTruthy();

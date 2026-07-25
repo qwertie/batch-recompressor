@@ -3,6 +3,7 @@ import { styled } from '../styled.js';
 import type { ViewModel } from '../viewmodel.js';
 import { EXTENSIONS_BY_KIND } from '../../shared/filetypes.js';
 import type { MediaKind } from '../../shared/types.js';
+import { Tip } from './Tip.js';
 
 const Kinds = styled('div')`
   display: flex; gap: 24px; flex-wrap: wrap; margin: 4px 0;
@@ -29,7 +30,13 @@ export const FileTypeTree = observer(function FileTypeTree(props: { vm: ViewMode
           <input type="checkbox" checked={enabled.length === exts.length}
             ref={el => { if (el) el.indeterminate = enabled.length > 0 && enabled.length < exts.length; }}
             onChange={e => exts.forEach(x => vm.setExtEnabled(x, e.target.checked))} />
-          {' '}<b>{KIND_LABELS[kind]}</b>
+          {' '}<b><Tip tip={<span>
+            Checked extensions are scanned when you add a folder. Extensions
+            only filter the scan — each file's real kind comes from ffprobe,
+            so e.g. an audio-only <code>.mp4</code> is treated as audio, an
+            animated <code>.gif</code> as video, and a single-frame video
+            file as an image. Album-art streams in audio files are ignored.
+          </span>}>{KIND_LABELS[kind]}</Tip></b>
         </label>
         <ExtList>
           {exts.map(ext =>
