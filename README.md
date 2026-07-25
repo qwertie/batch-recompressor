@@ -11,7 +11,9 @@ small Express backend that does the scanning and runs ffmpeg.
 ## Requirements
 
 - Node.js 22+
-- `ffmpeg` and `ffprobe` on your PATH (with libsvtav1 for the default AV1 codec)
+- `ffmpeg` and `ffprobe` on your PATH (with libsvtav1 for the default AV1 codec).
+  `npm run dev` / `npm start` check for them and offer to install via your
+  package manager (winget/choco/scoop, brew, or apt/dnf/pacman) if missing.
 
 ## Build & start
 
@@ -53,3 +55,16 @@ npm run typecheck
 > 2. create a basic version of the app with essential features, then make a commit from that
 > 3. write tests for basic features, ensure they pass
 > 4. add the rest of the features and finer details and tests in another commit; tests can be more superficial or even missing for nonessential features. add only basic UI tests, no end-to-end tests
+
+### Design Q&A
+
+Questions asked to finish the design, and the answers that shaped the app:
+
+1. **The app needs local filesystem access and to spawn ffmpeg — what architecture?**
+   → *Node server + browser UI*: Vite React frontend + small Node backend that
+   scans folders, runs ffprobe/ffmpeg, and streams progress (SSE).
+2. **Which CSS-in-JS library?** → *goober* (~1KB styled-components-like API).
+3. **Queue concurrency and encoding details?** → *1 job at a time*, assuming the
+   jobs themselves use many cores (SVT-AV1 default, effort slider maps to presets).
+4. **"TypeScript 7" — what do you mean?** → *Latest stable TS, tsgo if usable*.
+   (TypeScript 7 turned out to be stable on npm, so the project uses it.)

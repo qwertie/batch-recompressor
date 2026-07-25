@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "tsx scripts/check-ffmpeg.ts",
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "prestart": "tsx scripts/check-ffmpeg.ts",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build": "vite build",
