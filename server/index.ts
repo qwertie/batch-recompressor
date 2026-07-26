@@ -33,6 +33,7 @@ app.post('/api/enqueue', (req, res) => {
     res.status(400).json({ error: 'outputFolder is required' });
     return;
   }
+  queue.setMaxConcurrent(body.maxConcurrent ?? 1);
   for (const f of body.files ?? []) {
     queue.enqueue({
       info: f.info,
@@ -50,12 +51,8 @@ app.post('/api/unqueue', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/queue/stop', (req, res) => {
-  res.json({ ok: true, stopped: queue.stopCurrent(req.body?.deletePartial !== false) });
-});
-
-app.post('/api/queue/cancel', (_req, res) => {
-  queue.cancelPending();
+app.post('/api/queue/concurrency', (req, res) => {
+  queue.setMaxConcurrent(Number(req.body?.maxConcurrent));
   res.json({ ok: true });
 });
 

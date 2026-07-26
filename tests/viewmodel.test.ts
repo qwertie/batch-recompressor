@@ -70,9 +70,31 @@ describe('ViewModel', () => {
     const call = (fetcher as any).mock.calls.find((c: any[]) => String(c[0]).includes('enqueue'));
     const body = JSON.parse(call[1].body);
     expect(body.outputFolder).toBe('/out');
+    expect(body.maxConcurrent).toBe(1);
     expect(body.files[0].info.path).toBe('/in/a.mp4');
     expect(body.files[0].info.kind).toBe('video');
     expect(body.files[0].settings.videoCodec).toBe('av1');
+  });
+
+  it('retries errors but does not restart active or finished files', async () => {
+    const fetcher = fakeFetch([
+      file('/in/error.mp4'), file('/in/finished.mp4'), file('/in/processing.mp4'),
+    ]);
+    const vm = new ViewModel(fetcher);
+    await vm.addFolder('/in');
+    vm.setOutputFolder('/out');
+    vm.applyJobUpdate({
+      path: '/in/error.mp4', status: 'error', progress: 0, error: 'failed',
+    });
+    vm.applyJobUpdate({ path: '/in/finished.mp4', status: 'finished', progress: 1 });
+    vm.applyJobUpdate({ path: '/in/processing.mp4', status: 'processing', progress: 0.5 });
+
+    await vm.start();
+    const call = (fetcher as any).mock.calls.find(
+      (c: any[]) => String(c[0]).includes('/api/enqueue'));
+    const body = JSON.parse(call[1].body);
+    expect(body.files.map((entry: any) => entry.info.path)).toEqual(['/in/error.mp4']);
+    expect(vm.statusOf('/in/error.mp4')).toBe('enqueued');
   });
 
   it('start without an output folder sets an error', async () => {
@@ -82,16 +104,33 @@ describe('ViewModel', () => {
     expect(vm.error).toMatch(/output folder/i);
   });
 
-  it('cancelQueue reverts only waiting jobs to notQueued', async () => {
+  it('cancelQueue reverts only waiting jobs in the supplied page scope', async () => {
     const fetcher = fakeFetch([]);
     const vm = new ViewModel(fetcher);
     vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
     vm.applyJobUpdate({ path: '/in/b.mp4', status: 'enqueued', progress: 0 });
-    await vm.cancelQueue();
+    vm.applyJobUpdate({ path: '/other/c.mp4', status: 'enqueued', progress: 0 });
+    await vm.cancelQueue([file('/in/b.mp4')]);
     expect(vm.statusOf('/in/a.mp4')).toBe('processing');
     expect(vm.statusOf('/in/b.mp4')).toBe('notQueued');
-    expect((fetcher as any).mock.calls.some(
-      (c: any[]) => String(c[0]).includes('/api/queue/cancel'))).toBe(true);
+    expect(vm.statusOf('/other/c.mp4')).toBe('enqueued');
+    const call = (fetcher as any).mock.calls.find(
+      (c: any[]) => String(c[0]).includes('/api/unqueue'));
+    expect(JSON.parse(call[1].body).paths).toEqual(['/in/b.mp4']);
+  });
+
+  it('stopProcessing stops only processing jobs in the supplied page scope', async () => {
+    const fetcher = fakeFetch([]);
+    const vm = new ViewModel(fetcher);
+    vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
+    vm.applyJobUpdate({ path: '/other/b.mp4', status: 'processing', progress: 0.5 });
+    await vm.stopProcessing([file('/in/a.mp4')], false);
+    const call = (fetcher as any).mock.calls.find(
+      (c: any[]) => String(c[0]).includes('/api/unqueue'));
+    expect(JSON.parse(call[1].body)).toEqual({
+      paths: ['/in/a.mp4'],
+      deletePartial: false,
+    });
   });
 
   it('clearAll removes every scanned entry except the one processing', async () => {

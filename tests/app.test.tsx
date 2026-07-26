@@ -22,6 +22,7 @@ describe('App', () => {
     expect(screen.getAllByText('Prefer quality setting').length).toBeGreaterThan(0);
     expect(screen.getByText('Group by resolution')).toBeTruthy();
     expect(screen.getByText('Show directory tree')).toBeTruthy();
+    expect(screen.getByLabelText('Files to process at once')).toHaveProperty('value', '1');
     expect(screen.getByText('Reset global settings')).toBeTruthy();
     const numericInputs =
       [...document.querySelectorAll<HTMLInputElement>('input[type="number"]')];
@@ -82,6 +83,30 @@ describe('App', () => {
     render(<App vm={vm} />);
     expect(screen.getByRole('option', { name: 'AV1 (inherited)' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: '(inherit: av1)' })).toBeNull();
+  });
+
+  it('counts an errored file as retryable in the Start button', async () => {
+    const vm = makeVM([file('/in/error.mp4'), file('/in/finished.mp4')]);
+    await vm.addFolder('/in');
+    vm.applyJobUpdate({
+      path: '/in/error.mp4', status: 'error', progress: 0, error: 'failed',
+    });
+    vm.applyJobUpdate({ path: '/in/finished.mp4', status: 'finished', progress: 1 });
+    render(<App vm={vm} />);
+    expect(screen.getByRole('button', { name: '▶ Start (1)' })).toBeTruthy();
+  });
+
+  it('shows Stop only when the current file page contains a processing file', async () => {
+    const vm = makeVM([file('/in/a.mp4'), file('/in/b.mp4')]);
+    await vm.addFolder('/in');
+    vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
+    vm.select({ kind: 'file', path: '/in/b.mp4' });
+    const { rerender } = render(<App vm={vm} />);
+    expect(screen.queryByRole('button', { name: '■ Stop' })).toBeNull();
+
+    vm.select({ kind: 'file', path: '/in/a.mp4' });
+    rerender(<App vm={vm} />);
+    expect(screen.getByRole('button', { name: '■ Stop' })).toBeTruthy();
   });
 
   it('makes the file-page title a Show in file manager link', async () => {

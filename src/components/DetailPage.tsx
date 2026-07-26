@@ -62,14 +62,18 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
   const files = vm.selectedFiles;
   const [folderInput, setFolderInput] = useState('');
   const addFolder = () => { if (folderInput) { vm.addFolder(folderInput); setFolderInput(''); } };
-  const processing = [...vm.jobs.values()].some(j => j.status === 'processing');
-  const enqueued = [...vm.jobs.values()].some(j => j.status === 'enqueued');
+  const processingFiles = files.filter(f => vm.statusOf(f.path) === 'processing');
+  const processingCount = processingFiles.length;
+  const enqueued = files.some(f => vm.statusOf(f.path) === 'enqueued');
   const unqueued = files.some(f => vm.statusOf(f.path) === 'notQueued');
+  const startableFiles = files.filter(f => vm.isStartable(f.path));
   const stopCurrent = () => {
     const deletePartial = window.confirm(
-      'Stop the current encode?\n\nOK deletes its partial output. Cancel keeps the partial output.',
+      `Stop ${processingCount === 1 ? 'the current encode' : `${processingCount} current encodes`}?\n\n` +
+      `OK deletes ${processingCount === 1 ? 'its partial output' : 'their partial outputs'}. ` +
+      `Cancel keeps ${processingCount === 1 ? 'the partial output' : 'the partial outputs'}.`,
     );
-    void vm.stopCurrent(deletePartial);
+    void vm.stopProcessing(processingFiles, deletePartial);
   };
 
   let title = 'All files';
@@ -104,6 +108,13 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         <input type="checkbox" checked={vm.showDirectoryTree}
           onChange={e => vm.setShowDirectoryTree(e.target.checked)} />
         {' '}Show directory tree
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
+        <span style={{ width: 220 }}>Files to process at once</span>
+        <input type="range" min={1} max={8} step={1} value={vm.maxConcurrent}
+          aria-label="Files to process at once"
+          onChange={e => vm.setMaxConcurrent(Number(e.target.value))} />
+        <span>{vm.maxConcurrent}</span>
       </label>
 
       <h3>Add media</h3>
@@ -203,15 +214,15 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
     </p>}
     {settingsEditor}
     <ActionRow>
-      <Btn onClick={() => vm.start()} disabled={files.length === 0}>
-        ▶ Start ({files.length})
+      <Btn onClick={() => vm.start(startableFiles)} disabled={startableFiles.length === 0}>
+        ▶ Start ({startableFiles.length})
       </Btn>
       {sel.kind === 'root'
-        ? <Btn onClick={() => vm.clearAll()} disabled={vm.files.length === 0}>Clear all</Btn>
+        ? <Btn onClick={() => vm.clearAll(files)} disabled={files.length === 0}>Clear all</Btn>
         : excludeAction}
       <Btn onClick={() => vm.clearUnqueued(files)} disabled={!unqueued}>Clear unqueued</Btn>
-      <Btn onClick={() => vm.cancelQueue()} disabled={!enqueued}>Cancel queue</Btn>
-      {processing && <StopBtn onClick={stopCurrent}>■ Stop</StopBtn>}
+      <Btn onClick={() => vm.cancelQueue(files)} disabled={!enqueued}>Cancel queue</Btn>
+      {processingCount > 0 && <StopBtn onClick={stopCurrent}>■ Stop</StopBtn>}
     </ActionRow>
     <Table>
       <thead><tr>

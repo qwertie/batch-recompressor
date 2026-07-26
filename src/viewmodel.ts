@@ -25,6 +25,8 @@ export class ViewModel {
   overwrite = false;
   /** Show nested root/directory nodes in the sidebar instead of flat file paths. */
   showDirectoryTree = true;
+  /** Maximum number of FFmpeg processes allowed to run at once. */
+  maxConcurrent = 1;
   settings: EncodeSettings = { ...DEFAULT_SETTINGS };
   grouping: GroupingOptions = { ...DEFAULT_GROUPING };
   /** File extensions (lowercase, with dot) enabled for scanning. */
@@ -93,6 +95,15 @@ export class ViewModel {
 
   setShowDirectoryTree(v: boolean): void { this.showDirectoryTree = v; }
 
+  setMaxConcurrent(v: number): void {
+    this.maxConcurrent = Math.min(8, Math.max(1, Math.round(v) || 1));
+    void this.fetcher('/api/queue/concurrency', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxConcurrent: this.maxConcurrent }),
+    }).catch(err => runInAction(() => { this.error = String(err.message ?? err); }));
+  }
+
   setGrouping(field: keyof GroupingOptions, v: boolean): void { this.grouping[field] = v; }
 
   setExtEnabled(ext: string, enabled: boolean): void {
@@ -107,6 +118,7 @@ export class ViewModel {
   resetSettings(): void {
     this.settings = { ...DEFAULT_SETTINGS };
     this.showDirectoryTree = true;
+    this.setMaxConcurrent(1);
   }
 
   clearSelectionSettings(): void {
@@ -187,7 +199,14 @@ export class ViewModel {
   }
 
   /** Enqueue the given files (defaults to the current selection). */
+  isStartable(path: string): boolean {
+    const status = this.statusOf(path);
+    return status === 'notQueued' || status === 'error';
+  }
+
   async start(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
+    const startable = files.filter(f => this.isStartable(f.path));
+    if (startable.length === 0) return;
     if (!this.outputFolder) {
       this.error = 'Set an output folder first.';
       return;
@@ -195,7 +214,8 @@ export class ViewModel {
     const payload = {
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
-      files: files.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
+      maxConcurrent: this.maxConcurrent,
+      files: startable.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
     };
     await this.fetcher('/api/enqueue', {
       method: 'POST',
@@ -203,7 +223,7 @@ export class ViewModel {
       body: JSON.stringify(payload),
     });
     runInAction(() => {
-      for (const f of files) {
+      for (const f of startable) {
         const cur = this.jobs.get(f.path);
         if (!cur || cur.status === 'notQueued' || cur.status === 'error')
           this.jobs.set(f.path, { path: f.path, status: 'enqueued', progress: 0 });
@@ -211,21 +231,37 @@ export class ViewModel {
     });
   }
 
-  /** Stop only the currently processing job. */
-  async stopCurrent(deletePartial = true): Promise<void> {
-    await this.fetcher('/api/queue/stop', {
+  /** Stop currently processing jobs within the supplied page scope. */
+  async stopProcessing(
+    files: MediaFileInfo[] = this.selectedFiles,
+    deletePartial = true,
+  ): Promise<void> {
+    const paths = files
+      .filter(f => this.statusOf(f.path) === 'processing')
+      .map(f => f.path);
+    if (paths.length === 0) return;
+    await this.fetcher('/api/unqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deletePartial }),
+      body: JSON.stringify({ paths, deletePartial }),
     });
   }
 
-  /** Revert all waiting jobs to notQueued, leaving the active encode alone. */
-  async cancelQueue(): Promise<void> {
-    await this.fetcher('/api/queue/cancel', { method: 'POST' });
+  /** Revert waiting jobs within the supplied page scope to notQueued. */
+  async cancelQueue(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
+    const paths = files
+      .filter(f => this.statusOf(f.path) === 'enqueued')
+      .map(f => f.path);
+    if (paths.length === 0) return;
+    await this.fetcher('/api/unqueue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    });
+    const cancelled = new Set(paths);
     runInAction(() => {
       for (const [path, job] of this.jobs)
-        if (job.status === 'enqueued')
+        if (cancelled.has(path) && job.status === 'enqueued')
           this.jobs.set(path, { path, status: 'notQueued', progress: 0 });
     });
   }
@@ -255,9 +291,9 @@ export class ViewModel {
   }
 
   /** Clear every entry except the active encode; queued work is cancelled first. */
-  async clearAll(): Promise<void> {
-    await this.cancelQueue();
-    await this.clearEntries(this.files.map(f => f.path));
+  async clearAll(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
+    await this.cancelQueue(files);
+    await this.clearEntries(files.map(f => f.path));
   }
 
   /** Clear entries which have never been queued or were cancelled. */
@@ -322,6 +358,7 @@ export class ViewModel {
         this.outputFolder = s.outputFolder ?? '';
         this.overwrite = s.overwrite ?? false;
         this.showDirectoryTree = s.showDirectoryTree ?? true;
+        this.maxConcurrent = Math.min(8, Math.max(1, Math.round(s.maxConcurrent) || 1));
         this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
         this.grouping = { ...DEFAULT_GROUPING, ...s.grouping };
         this.enabledExts = s.enabledExts ?? [...ALL_EXTENSIONS];
@@ -335,6 +372,7 @@ export class ViewModel {
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
       showDirectoryTree: this.showDirectoryTree,
+      maxConcurrent: this.maxConcurrent,
       settings: { ...this.settings },
       grouping: { ...this.grouping },
       enabledExts: this.enabledExts.slice(),

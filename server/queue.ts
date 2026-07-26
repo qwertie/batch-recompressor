@@ -13,15 +13,31 @@ export interface Job {
   overwrite?: boolean;
 }
 
+type SpawnProcess = (
+  command: string,
+  args: string[],
+  options: { stdio: ['ignore', 'pipe', 'pipe'] },
+) => ChildProcess;
+
 /**
- * Sequential encode queue: one ffmpeg process at a time (ffmpeg itself
- * uses many cores). Emits 'update' with a JobState on every change.
+ * Concurrent encode queue, limited by maxConcurrent. Emits 'update' with a
+ * JobState on every change.
  */
 export class EncodeQueue extends EventEmitter {
   private jobs = new Map<string, { job: Job; state: JobState }>();
   private pending: string[] = [];
-  private current: { path: string; proc: ChildProcess | null } | null = null;
+  private current = new Map<string, ChildProcess | null>();
   private cancelRequests = new Map<string, boolean>();
+  private maxConcurrent = 1;
+
+  constructor(private spawnProcess: SpawnProcess = spawn) {
+    super();
+  }
+
+  setMaxConcurrent(value: number): void {
+    this.maxConcurrent = Math.min(8, Math.max(1, Math.round(value) || 1));
+    this.pump();
+  }
 
   getStates(): JobState[] {
     return [...this.jobs.values()].map(j => j.state);
@@ -44,9 +60,9 @@ export class EncodeQueue extends EventEmitter {
     const entry = this.jobs.get(filePath);
     if (!entry) return;
     this.pending = this.pending.filter(p => p !== filePath);
-    if (this.current?.path === filePath) {
+    if (this.current.has(filePath)) {
       this.cancelRequests.set(filePath, deletePartial);
-      if (this.current.proc) this.current.proc.kill('SIGKILL');
+      this.current.get(filePath)?.kill('SIGKILL');
       // pump() continues in run(), including if cancellation arrived before spawn.
     } else if (entry.state.status === 'enqueued') {
       entry.state.status = 'notQueued';
@@ -55,34 +71,23 @@ export class EncodeQueue extends EventEmitter {
     }
   }
 
-  /** Revert every waiting job to notQueued, without stopping the active job. */
-  cancelPending(): void {
-    for (const filePath of [...this.pending]) this.unqueue(filePath);
-  }
-
-  /** Stop only the active job. */
-  stopCurrent(deletePartial = true): boolean {
-    if (!this.current) return false;
-    this.unqueue(this.current.path, deletePartial);
-    return true;
-  }
-
   /** Forget non-processing records. Source and output files are untouched. */
   clear(paths: string[]): void {
     for (const filePath of paths) {
-      if (this.current?.path === filePath) continue;
+      if (this.current.has(filePath)) continue;
       this.pending = this.pending.filter(p => p !== filePath);
       this.jobs.delete(filePath);
     }
   }
 
   private pump(): void {
-    if (this.current) return;
-    const next = this.pending.shift();
-    if (next === undefined) return;
-    const entry = this.jobs.get(next)!;
-    this.current = { path: next, proc: null }; // claim the slot before any awaits
-    void this.run(entry.job, entry.state);
+    while (this.current.size < this.maxConcurrent) {
+      const next = this.pending.shift();
+      if (next === undefined) return;
+      const entry = this.jobs.get(next)!;
+      this.current.set(next, null); // claim the slot before any awaits
+      void this.run(entry.job, entry.state);
+    }
   }
 
   private async run(job: Job, state: JobState): Promise<void> {
@@ -102,7 +107,7 @@ export class EncodeQueue extends EventEmitter {
           state.status = 'finished';
           state.progress = 1;
           state.outputSize = existing.size;
-          this.current = null;
+          this.current.delete(f.path);
           this.emit('update', state);
           this.pump();
           return;
@@ -113,9 +118,9 @@ export class EncodeQueue extends EventEmitter {
       if (this.cancelRequests.has(f.path)) throw new Error('cancelled');
       const args = ffmpegArgs(f, outPath, job.settings);
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        const proc = this.spawnProcess('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
         outputStarted = true;
-        this.current = { path: f.path, proc };
+        this.current.set(f.path, proc);
         let stderrTail = '';
         proc.stderr!.on('data', (d: Buffer) => {
           stderrTail = (stderrTail + d.toString()).slice(-2000);
@@ -150,7 +155,7 @@ export class EncodeQueue extends EventEmitter {
       }
     }
     this.cancelRequests.delete(f.path);
-    this.current = null;
+    this.current.delete(f.path);
     this.emit('update', state);
     this.pump();
   }
