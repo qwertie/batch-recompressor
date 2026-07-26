@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ViewModel } from '../src/viewmodel.js';
 import { file, fakeFetch } from './helpers.js';
+import { DEFAULT_SETTINGS } from '../shared/types.js';
 
 describe('ViewModel', () => {
   it('addFolder scans and populates files and groups', async () => {
@@ -32,7 +33,8 @@ describe('ViewModel', () => {
     const vm = new ViewModel(fakeFetch([file('/in/a.mp4')]));
     await vm.addFolder('/in');
     const f = vm.files[0];
-    expect(vm.effectiveSettings(f).compressionRatio).toBe(4);
+    expect(vm.effectiveSettings(f).compressionRatio)
+      .toBe(DEFAULT_SETTINGS.compressionRatio);
     const gkey = vm.groups[0].key;
     vm.setOverride('group', gkey, 'compressionRatio', 6);
     vm.setOverride('group', gkey, 'effort', 3);
@@ -41,6 +43,21 @@ describe('ViewModel', () => {
     expect(vm.effectiveSettings(f)).toMatchObject({ compressionRatio: 8, effort: 3 });
     vm.setOverride('file', f.path, 'compressionRatio', undefined);
     expect(vm.effectiveSettings(f).compressionRatio).toBe(6);
+  });
+
+  it('can reset global settings and clear selected overrides', async () => {
+    const vm = new ViewModel(fakeFetch([file('/in/a.mp4')]));
+    await vm.addFolder('/in');
+    vm.setSetting('compressionRatio', 9);
+    vm.setSetting('maxWidth', 1280);
+    vm.resetSettings();
+    expect(vm.settings).toEqual(DEFAULT_SETTINGS);
+
+    const key = vm.groups[0].key;
+    vm.setOverride('group', key, 'maxWidth', 640);
+    vm.select({ kind: 'group', key });
+    vm.clearSelectionSettings();
+    expect(vm.groupOverrides.has(key)).toBe(false);
   });
 
   it('start enqueues the selection with file info and effective settings', async () => {
@@ -95,6 +112,33 @@ describe('ViewModel', () => {
     vm.applyJobUpdate({ path: '/in/b.mp4', status: 'finished', progress: 1 });
     await vm.clearUnqueued();
     expect(vm.files.map(f => f.path)).toEqual(['/in/b.mp4']);
+  });
+
+  it('requests Explorer reveal for a file path', async () => {
+    const fetcher = fakeFetch([]);
+    const vm = new ViewModel(fetcher);
+    await vm.revealInFileManager('C:\\Media\\clip.mp4');
+    const call = (fetcher as any).mock.calls.find(
+      (c: any[]) => String(c[0]).includes('/api/reveal'));
+    expect(JSON.parse(call[1].body)).toEqual({ path: 'C:\\Media\\clip.mp4' });
+    await vm.openFile('C:\\Media\\clip.mp4');
+    const openCall = (fetcher as any).mock.calls.find(
+      (c: any[]) => String(c[0]).includes('/api/open'));
+    expect(JSON.parse(openCall[1].body)).toEqual({ path: 'C:\\Media\\clip.mp4' });
+  });
+
+  it('reports shell-open failures and clears stale errors on success', async () => {
+    let fails = true;
+    const fetcher = (async () => ({
+      ok: !fails,
+      json: async () => fails ? { error: 'File not found' } : { ok: true },
+    })) as unknown as typeof fetch;
+    const vm = new ViewModel(fetcher);
+    await vm.openFile('C:\\Media\\missing.mp4');
+    expect(vm.error).toBe('File not found');
+    fails = false;
+    await vm.openFile('C:\\Media\\present.mp4');
+    expect(vm.error).toBe('');
   });
 
   it('selection drives selectedFiles', async () => {

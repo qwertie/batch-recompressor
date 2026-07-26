@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanFolder } from './scan.js';
 import { EncodeQueue } from './queue.js';
+import { revealInFileManager, shellOpen } from './shell.js';
 import type { EnqueueRequest, JobState } from '../shared/types.js';
 
 const app = express();
@@ -61,6 +62,40 @@ app.post('/api/queue/cancel', (_req, res) => {
 app.post('/api/jobs/clear', (req, res) => {
   queue.clear(req.body?.paths ?? []);
   res.json({ ok: true });
+});
+
+// POST /api/reveal { path } — select a file in the platform file manager
+app.post('/api/reveal', async (req, res) => {
+  const filePath = String(req.body?.path ?? '');
+  if (!filePath || !fs.existsSync(filePath)) {
+    res.status(404).json({ error: `File not found: ${filePath}` });
+    return;
+  }
+  try {
+    await revealInFileManager(filePath);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({
+      error: `Could not reveal ${filePath}: ${String(err.message ?? err)}`,
+    });
+  }
+});
+
+// POST /api/open { path } — open a file with its platform-associated app
+app.post('/api/open', async (req, res) => {
+  const filePath = String(req.body?.path ?? '');
+  if (!filePath || !fs.existsSync(filePath)) {
+    res.status(404).json({ error: `File not found: ${filePath}` });
+    return;
+  }
+  try {
+    await shellOpen(filePath);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({
+      error: `Could not open ${filePath}: ${String(err.message ?? err)}`,
+    });
+  }
 });
 
 // GET /api/jobs — current state of all known jobs

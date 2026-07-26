@@ -79,8 +79,11 @@ export async function probeFile(filePath: string, rootFolder: string): Promise<M
       width: v?.width ?? 0,
       height: v?.height ?? 0,
       fps: Math.round(fps * 1000) / 1000,
-      sampleRate: kind === 'audio' ? Number(a?.sample_rate ?? 0) : 0,
-      channels: kind === 'audio' ? Number(a?.channels ?? 0) : 0,
+      sampleRate: Number(a?.sample_rate ?? 0),
+      channels: Number(a?.channels ?? 0),
+      audioKbps: a
+        ? (Number(a.bit_rate ?? 0) / 1000 || (kind === 'audio' ? bitRate / 1000 : 0))
+        : 0,
       kbps: kind === 'image' ? 0 : Math.round(bitRate / 1000),
       size,
       duration: kind === 'image' ? 0 : duration,

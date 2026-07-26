@@ -16,11 +16,15 @@ describe('App', () => {
     render(<App vm={makeVM([])} />);
     expect(screen.getByText('Add folder')).toBeTruthy();
     expect(screen.getAllByText('All files').length).toBeGreaterThan(0); // tree node + page title
-    expect(screen.getByText(/Compression ratio/)).toBeTruthy();
+    expect(screen.getAllByText(/Compression ratio/).length).toBeGreaterThan(0);
     // These also appear inside tooltip bubbles, hence getAllByText
     expect(screen.getAllByText('Prefer target rate').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Prefer quality setting').length).toBeGreaterThan(0);
     expect(screen.getByText('Group by resolution')).toBeTruthy();
+    expect(screen.getByText('Reset global settings')).toBeTruthy();
+    const numericInputs =
+      [...document.querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    expect(numericInputs.slice(3, 6).map(input => input.value)).toEqual(['', '', '']);
     expect(screen.getByText(/🖼 Images/)).toBeTruthy(); // file-type tree roots
     expect(screen.getByText(/🔊 Audio/)).toBeTruthy();
   });
@@ -56,5 +60,38 @@ describe('App', () => {
     await waitFor(() => expect(vm.groups).toHaveLength(2));
     fireEvent.click(screen.getByLabelText(/Group by framerate/));
     await waitFor(() => expect(vm.groups).toHaveLength(1));
+  });
+
+  it('makes the file-page title a Show in file manager link', async () => {
+    const fetcher = fakeFetch([file('/in/a.mp4')]);
+    const vm = new ViewModel(fetcher);
+    await vm.addFolder('/in');
+    vm.select({ kind: 'file', path: '/in/a.mp4' });
+    render(<App vm={vm} />);
+    const link = screen.getByTitle('Show in file manager');
+    expect(link.textContent).toBe('/in/a.mp4');
+    fireEvent.click(link);
+    await waitFor(() => expect((fetcher as any).mock.calls.some(
+      (c: any[]) => String(c[0]).includes('/api/reveal'))).toBe(true));
+  });
+
+  it('opens queue filenames and reveals completed outputs', async () => {
+    const fetcher = fakeFetch([file('/in/a.mp4')]);
+    const vm = new ViewModel(fetcher);
+    await vm.addFolder('/in');
+    vm.applyJobUpdate({
+      path: '/in/a.mp4', status: 'finished', progress: 1,
+      outputPath: 'C:\\out\\a.mkv', outputSize: 1000,
+    });
+    render(<App vm={vm} />);
+
+    fireEvent.click(screen.getByTitle('Open file'));
+    fireEvent.click(screen.getByTitle('Show output in file manager'));
+    await waitFor(() => {
+      expect((fetcher as any).mock.calls.some(
+        (c: any[]) => String(c[0]).includes('/api/open'))).toBe(true);
+      expect((fetcher as any).mock.calls.some(
+        (c: any[]) => String(c[0]).includes('/api/reveal'))).toBe(true);
+    });
   });
 });

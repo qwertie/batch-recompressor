@@ -22,7 +22,7 @@ runs ffmpeg.
 
 ## Build & start
 
-On Windows you should be able to just double-click `install-and-run.bat` (if ffmpeg is installed the first time, run it again). Or in terminal:
+On Windows you should be able to just double-click `prepare-and-run.bat` (if ffmpeg is installed the first time, run it again). Or in terminal:
 
 ```sh
 npm install

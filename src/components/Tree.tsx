@@ -15,7 +15,17 @@ const NodeRow = styled('div')<{ selected?: boolean }>`
 `;
 const Indent = styled('div')`margin-left: 16px;`;
 const Toggle = styled('span')`
-  display: inline-block; width: 14px; user-select: none; color: #888;
+  display: inline-flex;
+  width: 22px;
+  min-height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: -3px 1px -3px -4px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  color: #aaa;
 `;
 
 /** A folder-hierarchy node built from file paths relative to a root folder. */

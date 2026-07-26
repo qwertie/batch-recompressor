@@ -100,6 +100,15 @@ export class ViewModel {
     this.settings[key] = value;
   }
 
+  resetSettings(): void {
+    this.settings = { ...DEFAULT_SETTINGS };
+  }
+
+  clearSelectionSettings(): void {
+    if (this.selection.kind === 'group') this.groupOverrides.delete(this.selection.key);
+    else if (this.selection.kind === 'file') this.fileOverrides.delete(this.selection.path);
+  }
+
   setOverride(
     map: 'group' | 'file', key: string,
     field: keyof EncodeSettings, value: number | string | undefined,
@@ -250,6 +259,44 @@ export class ViewModel {
   async clearUnqueued(files: MediaFileInfo[] = this.files): Promise<void> {
     await this.clearEntries(files
       .filter(f => this.statusOf(f.path) === 'notQueued').map(f => f.path));
+  }
+
+  async revealInFileManager(path: string): Promise<void> {
+    this.error = '';
+    try {
+      const res = await this.fetcher('/api/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Could not reveal the file in its file manager.');
+      }
+    } catch (err: any) {
+      runInAction(() => {
+        this.error = String(err.message ?? err);
+      });
+    }
+  }
+
+  async openFile(path: string): Promise<void> {
+    this.error = '';
+    try {
+      const res = await this.fetcher('/api/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Could not open the file.');
+      }
+    } catch (err: any) {
+      runInAction(() => {
+        this.error = String(err.message ?? err);
+      });
+    }
   }
 
   applyJobUpdate(state: JobState): void {

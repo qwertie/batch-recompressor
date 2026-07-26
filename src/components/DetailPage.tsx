@@ -8,6 +8,21 @@ import { density, densityUnit, estimatedSize, supportsQualityMode } from '../../
 import { Tip, DensityTip } from './Tip.js';
 
 const Page = styled('div')`flex: 1; padding: 12px 16px; overflow: auto;`;
+const ExplorerLink = styled('button')`
+  padding: 0; border: 0; background: none; color: #8fc7ff; cursor: pointer;
+  font: inherit; font-weight: inherit; text-align: left; word-break: break-all;
+  text-decoration: underline;
+  &:hover { color: #b9dcff; }
+`;
+const TableLink = styled('button')`
+  padding: 0; border: 0; background: none; color: #8fc7ff; cursor: pointer;
+  font: inherit; text-align: left; text-decoration: underline;
+  &:hover { color: #b9dcff; }
+`;
+const StatusLink = styled('button')`
+  padding: 0; border: 0; background: none; color: inherit; cursor: pointer;
+  font: inherit; text-align: left; text-decoration: underline;
+`;
 const Btn = styled('button')`
   margin-right: 8px; padding: 4px 12px; cursor: pointer;
 `;
@@ -155,14 +170,26 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
   }
 
   return <Page>
-    <h2 style={{ wordBreak: 'break-all' }}>{title}</h2>
+    <h2 style={{ wordBreak: 'break-all' }}>
+      {sel.kind === 'file'
+        ? <ExplorerLink title="Show in file manager"
+            onClick={() => vm.revealInFileManager(sel.path)}>
+            {title}
+          </ExplorerLink>
+        : title}
+    </h2>
     {vm.error && <p style={{ color: '#e05555' }}>{vm.error}</p>}
-    {sel.kind === 'root' && vm.rootFolders.length > 0 &&
-      <div>
+    <div>
+      {sel.kind === 'root' && vm.rootFolders.length > 0 &&
         <Btn onClick={() => vm.rescanAll()} disabled={vm.scanning}>
           {vm.scanning ? 'Scanning…' : '⟳ Rescan'}
-        </Btn>
-      </div>}
+        </Btn>}
+      {sel.kind === 'root'
+        ? <Btn onClick={() => vm.resetSettings()}>Reset global settings</Btn>
+        : <Btn onClick={() => vm.clearSelectionSettings()}>
+            Clear settings (use global)
+          </Btn>}
+    </div>
     {files.length > 0 && <p style={{ color: '#999' }}>
       {files.length} file{files.length === 1 ? '' : 's'},{' '}
       {fmtSize(files.reduce((a, f) => a + f.size, 0))} total, target ~
@@ -198,20 +225,31 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
           const job = vm.jobs.get(f.path);
           const status = job?.status ?? 'notQueued';
           const eff = vm.effectiveSettings(f);
+          const statusLabel = status === 'processing'
+            ? `processing ${Math.round((job?.progress ?? 0) * 100)}%`
+            : status === 'error' ? `error: ${job?.error}` : status;
+          const outputLabel = statusLabel + (status === 'finished' && job?.outputSize
+            ? ` (${fmtSize(job.outputSize)})` : '');
+          const revealOutput = (status === 'processing' || status === 'finished')
+            && job?.outputPath;
           return <tr key={f.path}>
-            <td style={{ wordBreak: 'break-all', cursor: 'pointer' }}
-              onClick={() => vm.select({ kind: 'file', path: f.path })}>{f.path}</td>
+            <td style={{ wordBreak: 'break-all' }}>
+              <TableLink title="Open file" onClick={() => vm.openFile(f.path)}>
+                {f.path}
+              </TableLink>
+            </td>
             <td>{fmtSize(f.size)}</td>
             <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
             <td>{f.kind !== 'image' && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff))
               ? `~${fmtSize(estimatedSize(f, eff))}`
               : `quality ${eff.quality}`}</td>
             <StatusCell status={status}>
-              {status === 'processing'
-                ? `processing ${Math.round((job?.progress ?? 0) * 100)}%`
-                : status === 'error' ? `error: ${job?.error}` : status}
-              {status === 'finished' && job?.outputSize
-                ? ` (${fmtSize(job.outputSize)})` : ''}
+              {revealOutput
+                ? <StatusLink title="Show output in file manager"
+                    onClick={() => vm.revealInFileManager(job.outputPath!)}>
+                    {outputLabel}
+                  </StatusLink>
+                : outputLabel}
               {status === 'processing' &&
                 <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
             </StatusCell>

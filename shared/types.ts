@@ -13,9 +13,11 @@ export interface MediaFileInfo {
   height: number;
   /** Frames per second, rounded to 3 decimals; 0 for image/audio. */
   fps: number;
-  /** Audio sample rate in Hz and channel count; 0 for video/image. */
+  /** Audio-stream sample rate and channels; 0 when there is no audio stream. */
   sampleRate: number;
   channels: number;
+  /** Audio-stream bitrate in kbps, including embedded video audio when known. */
+  audioKbps?: number;
   /** Overall bitrate in kbps (0 for images). */
   kbps: number;
   /** File size in bytes. */
@@ -61,21 +63,29 @@ export interface EncodeSettings {
   audioCodec: 'opus' | 'aac' | 'mp3';
   /** 0 (fastest) .. 10 (slowest/best). */
   effort: number;
+  /** Maximum output dimensions; 0 means unlimited. */
+  maxWidth: number;
+  maxHeight: number;
+  /** Maximum output audio sample rate in Hz; 0 means unlimited. */
+  maxSampleRate: number;
 }
 
 /** Per-group / per-file overrides: any subset of EncodeSettings. */
 export type SettingsOverride = Partial<EncodeSettings>;
 
 export const DEFAULT_SETTINGS: EncodeSettings = {
-  compressionRatio: 4,
-  minDensity: 0.05,
-  maxDensity: 4,
+  compressionRatio: 3,
+  minDensity: 0.1,
+  maxDensity: 10,
   rateMode: 'bitrate',
   quality: 75,
   videoCodec: 'av1',
   imageFormat: 'webp',
   audioCodec: 'opus',
   effort: 6,
+  maxWidth: 0,
+  maxHeight: 0,
+  maxSampleRate: 0,
 };
 
 export interface EnqueueRequest {

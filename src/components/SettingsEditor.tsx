@@ -10,21 +10,35 @@ const Row = styled('label')`
 
 const TIPS: Partial<Record<keyof EncodeSettings, React.ReactNode>> = {
   compressionRatio: <span>
-    Target output size = input size ÷ ratio, e.g. ratio <b>4</b> aims to turn a
-    800 MB video into a ~200 MB one. Used in <b>target rate</b> mode (for images
-    and in quality mode, the quality slider decides instead). The resulting
-    density is still clamped to the min/max limits below.
+    This is the main setting controlling the <b>target rate</b>. The target
+    rate is based on the target density formula:
+    <code>TargetDensity = clamp(SourceDensity / CompressionRatio, MinDensity, MaxDensity)</code>
+
+    <br />{DensityTip}
+    <b>Min density</b> is the floor, protecting low-bitrate files from ratio
+    over-shrinking. For example, min <b>0.1</b> stops a 1080p30 video from
+    being targeted below ~208 kbps, or 48 kHz stereo audio below ~9.6 kbps.
+    <br /><b>Max density</b> is the ceiling.
   </span>,
-  minDensity: <span>
-    Floor for the target density, protecting low-bitrate files from ratio
-    over-shrinking. {DensityTip} e.g. min <b>0.05</b> stops a 1080p30 video
-    from being targeted below ~104 kbps, or 48 kHz stereo audio below ~4.8 kbps.
+  maxWidth: <span>
+    <b>Max width</b> and <b>Max height</b> shrink an image or video down when
+    it is too large, while maintaining its aspect ratio. Leave either setting
+    blank for no limit in that dimension. Density applies to the new output
+    dimensions rather than the source dimensions. For example, if the limits
+    cut both the width and height in half, and Compression ratio also cuts the
+    size by about <b>3×</b>, the effective size reduction is about <b>12×</b>.
   </span>,
-  maxDensity: <span>
-    Ceiling for the target density, so barely-compressed sources (e.g. WAV
-    audio at 16 b/smp) don't get absurdly large targets. {DensityTip}
-    e.g. max <b>4</b> caps 1080p30 video at ~8.3 Mbps and 48 kHz stereo audio
-    at ~384 kbps.
+  maxSampleRate: <span>
+    Maximum audio sample rate, when the target codec allows it; blank means no
+    limit. This also applies to audio inside videos. By default, video audio is
+    passed through unchanged. It is recompressed only when this limit is less
+    than or equal to its current sample rate: 44,100 Hz with a 48,000 Hz limit
+    passes through, while 44,100 Hz with a 44,100 Hz limit is recompressed.
+    Pure audio files are always recompressed. Only when audio is recompressed
+    do the density or quality settings apply to it. Density uses the limited
+    output sample rate, not the original sample rate. FFmpeg uses the closest
+    sample rate supported by the selected audio codec without exceeding the
+    limit.
   </span>,
   rateMode: <span>
     <b>Prefer target rate</b>: encode to the bitrate implied by ratio and
@@ -35,7 +49,7 @@ const TIPS: Partial<Record<keyof EncodeSettings, React.ReactNode>> = {
     uses the target rate.
   </span>,
   quality: <span>
-    0 = worst, 100 = best; mapped to each format's native scale, e.g. <b>75</b>
+    0 = worst, 100 = best; mapped to each format's native scale, e.g. <b>75 </b>
     becomes WebP <code>-quality 75</code>, JPEG <code>-q:v 9</code>,
     AV1/x264 <code>CRF 16/13</code>, MP3 <code>-q:a 2</code>. Always used for
     images; used for video/audio in quality mode.
@@ -66,6 +80,9 @@ const NUMERIC_FIELDS: { key: keyof EncodeSettings; label: string }[] = [
   { key: 'compressionRatio', label: 'Compression ratio (x smaller)' },
   { key: 'minDensity', label: 'Min density' },
   { key: 'maxDensity', label: 'Max density' },
+  { key: 'maxWidth', label: 'Max width' },
+  { key: 'maxHeight', label: 'Max height' },
+  { key: 'maxSampleRate', label: 'Max audio sample rate' },
 ];
 
 const CODEC_FIELDS: { key: keyof EncodeSettings; label: string; options: [string, string][] }[] = [
@@ -90,16 +107,9 @@ export const SettingsEditor = observer(function SettingsEditor(props: {
   const isOverride = override !== undefined;
   const val = (k: keyof EncodeSettings) => (isOverride ? override[k] : base[k]);
   const eff = (k: keyof EncodeSettings) => val(k) ?? base[k];
+  const isBlankLimit = (k: keyof EncodeSettings) =>
+    k === 'maxWidth' || k === 'maxHeight' || k === 'maxSampleRate';
   return <div>
-    {NUMERIC_FIELDS.map(({ key, label }) =>
-      <Row key={key}>
-        <span><Tip tip={TIPS[key]}>{label}</Tip></span>
-        <input type="number" step="any" style={{ width: 90 }}
-          value={val(key) as number | undefined ?? ''}
-          placeholder={isOverride ? String(base[key]) : undefined}
-          onChange={e => onChange(key,
-            e.target.value === '' ? undefined : Number(e.target.value))} />
-      </Row>)}
     <Row>
       <span><Tip tip={TIPS.rateMode}>Rate control</Tip></span>
       <label>
@@ -117,6 +127,20 @@ export const SettingsEditor = observer(function SettingsEditor(props: {
         onChange={e => onChange('quality', Number(e.target.value))} />
       <span>{eff('quality')}{isOverride && override.quality === undefined ? ' (inherited)' : ''}</span>
     </Row>
+    {NUMERIC_FIELDS.map(({ key, label }) =>
+      <Row key={key}>
+        <span>{TIPS[key] ? <Tip tip={TIPS[key]}>{label}</Tip> : label}</span>
+        <input type="number" step="any" style={{ width: 90 }}
+          min={isBlankLimit(key) ? 0 : undefined}
+          value={isBlankLimit(key) && val(key) === 0
+            ? ''
+            : val(key) as number | undefined ?? ''}
+          placeholder={isOverride ? String(base[key]) : undefined}
+          onChange={e => onChange(key,
+            e.target.value === ''
+              ? (isOverride ? undefined : isBlankLimit(key) ? 0 : undefined)
+              : Number(e.target.value))} />
+      </Row>)}
     {CODEC_FIELDS.map(({ key, label, options }) =>
       <Row key={key}>
         <span><Tip tip={TIPS[key]}>{label}</Tip></span>
