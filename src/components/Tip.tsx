@@ -59,12 +59,12 @@ export function Tip(props: { tip: React.ReactNode; children: React.ReactNode }) 
 export const DensityTip = (
   <span>
     <b>Density</b> describes how many bits of information a media file contains
-    per pixel, per pixel-second (video) or per Hz (audio). Typical values are
+    per pixel, per second per pixel (video) or per Hz (audio). Typical values are
     between 0.2 and 20. To convert density to bitrate, multiply by the resolution
     or, for audio, the sample rate. For example, if the density is 1.0:
     <table>
       <tbody>
-        <tr><td>Video</td><td><code>1 b/px·s × 1920x1080 px = 2074 kb/s</code></td></tr>
+        <tr><td>Video</td><td><code>1 b/s/px × 1920x1080 px = 2074 kb/s</code></td></tr>
         <tr><td>Image</td><td><code>1 b/px × 4000x3000 px = 12 Mb = 1.5 MB</code></td></tr>
         <tr><td>Audio</td><td><code>1 b/smp × 41000 Hz × 2ch = 82 kb/s</code></td></tr>
       </tbody>

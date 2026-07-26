@@ -19,6 +19,7 @@ describe('persistence', () => {
     await vm1.addFolder('/in');
     vm1.setOutputFolder('/out');
     vm1.setOverwrite(true);
+    vm1.setShowDirectoryTree(false);
     vm1.setSetting('compressionRatio', 5);
     vm1.setSetting('rateMode', 'quality');
     vm1.setGrouping('byFps', false);
@@ -30,6 +31,7 @@ describe('persistence', () => {
     vm2.enablePersistence(storage);
     expect(vm2.outputFolder).toBe('/out');
     expect(vm2.overwrite).toBe(true);
+    expect(vm2.showDirectoryTree).toBe(false);
     expect(vm2.settings.compressionRatio).toBe(5);
     expect(vm2.settings.rateMode).toBe('quality');
     expect(vm2.grouping.byFps).toBe(false);

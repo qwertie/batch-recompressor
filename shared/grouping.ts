@@ -2,7 +2,7 @@ import type { MediaFileInfo } from './types.js';
 import { density, densityUnit } from './encode.js';
 
 export interface FileGroup {
-  /** e.g. "1920x1080 ~28.4fps ~0.92 b/px·s (17)" */
+  /** e.g. "1920x1080 ~28.4fps ~0.92 b/s/px (17)" */
   label: string;
   key: string;
   /** Representative (median) density of the group. */

@@ -8,7 +8,7 @@ import { file, image, audio } from './helpers.js';
 
 describe('targetDensity / targetBps', () => {
   it('divides density by the compression ratio', () => {
-    const f = file('/a.mp4', 4000); // ≈1.93 b/px·s
+    const f = file('/a.mp4', 4000); // ≈1.93 b/s/px
     expect(targetDensity(f, DEFAULT_SETTINGS))
       .toBeCloseTo(1.929 / DEFAULT_SETTINGS.compressionRatio, 2);
     expect(targetBps(f, DEFAULT_SETTINGS))

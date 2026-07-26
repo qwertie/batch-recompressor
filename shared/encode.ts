@@ -10,7 +10,7 @@ export function denominator(f: MediaFileInfo): number {
   return f.sampleRate * f.channels * f.duration;
 }
 
-/** Normalized compression density (bits per pixel·second / pixel / sample). ~1 is typical. */
+/** Normalized compression density (bits/second/pixel / pixel / sample). ~1 is typical. */
 export function density(f: MediaFileInfo): number {
   const d = denominator(f);
   return d > 0 ? (f.size * 8) / d : 0;
@@ -57,7 +57,7 @@ export function recompressesVideoAudio(f: MediaFileInfo, s: EncodeSettings): boo
 
 /** Unit label for a media kind's density. */
 export function densityUnit(kind: MediaKind): string {
-  return kind === 'video' ? 'b/px·s' : kind === 'image' ? 'b/px' : 'b/smp';
+  return kind === 'video' ? 'b/s/px' : kind === 'image' ? 'b/px' : 'b/smp';
 }
 
 /** Target density after applying the compression ratio, clamped to min/max. */

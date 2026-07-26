@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { styled } from '../styled.js';
 import type { ViewModel, Selection } from '../viewmodel.js';
 import type { VideoFileInfo } from '../../shared/types.js';
-import { normPath } from '../../shared/paths.js';
+import { flatDisplayPath, normPath } from '../../shared/paths.js';
 
 const NodeRow = styled('div')<{ selected?: boolean }>`
   padding: 2px 6px;
@@ -88,6 +88,22 @@ const DirTreeView = observer(function DirTreeView(props: { vm: ViewModel; node: 
   </>;
 });
 
+const FlatFiles = observer(function FlatFiles(props: {
+  vm: ViewModel;
+  files: VideoFileInfo[];
+}) {
+  const { vm, files } = props;
+  return <>
+    {files.map(f => {
+      const sel = vm.selection.kind === 'file' && vm.selection.path === f.path;
+      return <NodeRow key={f.path} selected={sel}
+        onClick={() => vm.select({ kind: 'file', path: f.path })}>
+        🎞 {flatDisplayPath(f.path, f.rootFolder)}{statusIcon[vm.statusOf(f.path)]}
+      </NodeRow>;
+    })}
+  </>;
+});
+
 export const Tree = observer(function Tree(props: { vm: ViewModel }) {
   const { vm } = props;
   const isSel = (s: Selection) => JSON.stringify(s) === JSON.stringify(vm.selection);
@@ -104,10 +120,12 @@ export const Tree = observer(function Tree(props: { vm: ViewModel }) {
         return <Expandable key={g.key} label={g.label}
           selected={isSel({ kind: 'group', key: g.key })}
           onClick={() => vm.select({ kind: 'group', key: g.key })}>
-          {[...byRoot.entries()].map(([root, files]) =>
-            <Expandable key={root} label={'📂 ' + root}>
-              <DirTreeView vm={vm} node={buildDirTree(files, root)} />
-            </Expandable>)}
+          {vm.showDirectoryTree
+            ? [...byRoot.entries()].map(([root, files]) =>
+                <Expandable key={root} label={'📂 ' + root}>
+                  <DirTreeView vm={vm} node={buildDirTree(files, root)} />
+                </Expandable>)
+            : <FlatFiles vm={vm} files={g.files} />}
         </Expandable>;
       })}
     </Expandable>

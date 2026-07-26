@@ -21,6 +21,7 @@ describe('App', () => {
     expect(screen.getAllByText('Prefer target rate').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Prefer quality setting').length).toBeGreaterThan(0);
     expect(screen.getByText('Group by resolution')).toBeTruthy();
+    expect(screen.getByText('Show directory tree')).toBeTruthy();
     expect(screen.getByText('Reset global settings')).toBeTruthy();
     const numericInputs =
       [...document.querySelectorAll<HTMLInputElement>('input[type="number"]')];
@@ -37,8 +38,20 @@ describe('App', () => {
     });
     fireEvent.click(screen.getByText('Add folder'));
     await waitFor(() =>
-      expect(screen.getByText('1920x1080 ~30fps ~0.96 b/px·s (1)')).toBeTruthy());
+      expect(screen.getByText('1920x1080 ~30fps ~0.96 b/s/px (1)')).toBeTruthy());
     expect(screen.getAllByText('/in/sub/a.mp4').length).toBeGreaterThan(0);
+  });
+
+  it('shows compact root-relative paths directly below groups in flat mode', async () => {
+    const vm = makeVM([file('C:\\A\\LongFolderName\\C\\D.mp4', 2000, {
+      rootFolder: 'C:\\A\\LongFolderName',
+    })]);
+    render(<App vm={vm} />);
+    await vm.addFolder('C:\\A\\LongFolderName');
+    fireEvent.click(screen.getByLabelText('Show directory tree'));
+    await waitFor(() =>
+      expect(screen.getByText(/LongFolderN\.\.\.\\C\\D\.mp4/)).toBeTruthy());
+    expect(screen.queryByText(/📂 C:\\A\\LongFolderName/)).toBeNull();
   });
 
   it('Exclude button hides the file and lists it under Exclusions', async () => {
@@ -60,6 +73,15 @@ describe('App', () => {
     await waitFor(() => expect(vm.groups).toHaveLength(2));
     fireEvent.click(screen.getByLabelText(/Group by framerate/));
     await waitFor(() => expect(vm.groups).toHaveLength(1));
+  });
+
+  it('uses friendly names for inherited codec options', async () => {
+    const vm = makeVM([file('/in/a.mp4')]);
+    await vm.addFolder('/in');
+    vm.select({ kind: 'group', key: vm.groups[0].key });
+    render(<App vm={vm} />);
+    expect(screen.getByRole('option', { name: 'AV1 (inherited)' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: '(inherit: av1)' })).toBeNull();
   });
 
   it('makes the file-page title a Show in file manager link', async () => {

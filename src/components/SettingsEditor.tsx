@@ -141,15 +141,19 @@ export const SettingsEditor = observer(function SettingsEditor(props: {
               ? (isOverride ? undefined : isBlankLimit(key) ? 0 : undefined)
               : Number(e.target.value))} />
       </Row>)}
-    {CODEC_FIELDS.map(({ key, label, options }) =>
-      <Row key={key}>
+    {CODEC_FIELDS.map(({ key, label, options }) => {
+      const inheritedLabel = options
+        .find(([value]) => value === String(base[key]))?.[1]
+        .replace(/\s+\([^)]*\)$/, '') ?? String(base[key]);
+      return <Row key={key}>
         <span><Tip tip={TIPS[key]}>{label}</Tip></span>
         <select value={(val(key) as string | undefined) ?? (isOverride ? '' : base[key] as string)}
           onChange={e => onChange(key, e.target.value || undefined)}>
-          {isOverride && <option value="">(inherit: {String(base[key])})</option>}
+          {isOverride && <option value="">{inheritedLabel} (inherited)</option>}
           {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
         </select>
-      </Row>)}
+      </Row>;
+    })}
     <Row>
       <span><Tip tip={TIPS.effort}>Effort (0 fast – 10 best)</Tip></span>
       <input type="range" min={0} max={10} step={1} value={eff('effort') as number}

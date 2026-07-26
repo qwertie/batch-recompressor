@@ -49,7 +49,7 @@ export interface EncodeSettings {
   compressionRatio: number;
   /**
    * Min/max compression density in normalized units where ~1 is typical:
-   * video = bits/(pixel·second), image = bits/pixel,
+   * video = bits/second/pixel, image = bits/pixel,
    * audio = bits/(sample·channel). Used in bitrate mode.
    */
   minDensity: number;

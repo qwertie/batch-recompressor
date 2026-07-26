@@ -8,6 +8,24 @@ export function normPath(p: string): string {
   return n;
 }
 
+/**
+ * Compact path shown when the sidebar directory tree is disabled. Includes
+ * the added root folder's name so files from different roots remain distinct.
+ */
+export function flatDisplayPath(filePath: string, rootFolder: string): string {
+  const file = normPath(filePath);
+  const root = normPath(rootFolder);
+  const rootName = root.split('/').pop() || root;
+  const shownRoot = rootName.length > 12 ? `${rootName.slice(0, 11)}...` : rootName;
+  const relative = root === '/'
+    ? file.slice(1)
+    : file.toLowerCase().startsWith(`${root.toLowerCase()}/`)
+      ? file.slice(root.length + 1)
+      : file.split('/').pop() || file;
+  const separator = rootFolder.includes('\\') || /^[A-Za-z]:/.test(root) ? '\\' : '/';
+  return [shownRoot, relative].filter(Boolean).join(separator).replaceAll('/', separator);
+}
+
 /** True if `child` equals `parent` or is inside it. Case-insensitive drive-letter friendly. */
 export function isInside(child: string, parent: string): boolean {
   const c = normPath(child).toLowerCase();

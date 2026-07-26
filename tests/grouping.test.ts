@@ -18,7 +18,7 @@ describe('roundFps', () => {
 });
 
 describe('density', () => {
-  it('is bits per pixel-second for video', () => {
+  it('is bits per second per pixel for video', () => {
     // 2000 kbps at 1920x1080 -> 2,000,000 / 2,073,600 ≈ 0.965
     expect(density(file('/a.mp4', 2000))).toBeCloseTo(0.9645, 3);
   });
@@ -39,7 +39,7 @@ describe('groupFiles', () => {
   });
 
   it('can ignore resolution and framerate, grouping purely by density', () => {
-    // Same density (b/px·s) at different resolutions
+    // Same density (b/s/px) at different resolutions
     const files = [file('/a.mp4', 2000),
       file('/b.mp4', 889, { width: 1280, height: 720, size: 2000 * 125 * 60 * (1280 * 720) / (1920 * 1080) })];
     const groups = groupFiles(files, { byResolution: false, byFps: false });
@@ -99,7 +99,7 @@ describe('groupFiles', () => {
 
   it('labels use the density unit of the kind', () => {
     const [v] = groupFiles([file('/a.mp4', 2000)]);
-    expect(v.label).toBe('1920x1080 ~30fps ~0.96 b/px·s (1)');
+    expect(v.label).toBe('1920x1080 ~30fps ~0.96 b/s/px (1)');
     const [a] = groupFiles([audio('/a.opus', 96)]);
     expect(a.label).toBe('audio 48kHz stereo ~1.00 b/smp (1)');
     const [i] = groupFiles([image('/a.jpg', 1e6, 4000, 2000)]);

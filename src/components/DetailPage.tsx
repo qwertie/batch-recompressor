@@ -100,6 +100,11 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
           e.g. after changing quality settings.
         </span>}>Overwrite existing output files</Tip>
       </label>
+      <label style={{ display: 'block', margin: '4px 0' }}>
+        <input type="checkbox" checked={vm.showDirectoryTree}
+          onChange={e => vm.setShowDirectoryTree(e.target.checked)} />
+        {' '}Show directory tree
+      </label>
 
       <h3>Add media</h3>
       <div>
@@ -116,7 +121,7 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       <FileTypeTree vm={vm} />
       <h3><Tip tip={<span>
         Files always group by media kind and by compression density (splitting
-        when two files differ by more than 25%, e.g. 0.9 and 1.3 b/px·s end up
+        when two files differ by more than 25%, e.g. 0.9 and 1.3 b/s/px end up
         apart). {DensityTip} These checkboxes additionally split groups by
         resolution (sample rate/channels for audio) and framerate — untick
         both to group purely by density, e.g. putting a 720p and a 1080p video
@@ -199,14 +204,14 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
     {settingsEditor}
     <ActionRow>
       <Btn onClick={() => vm.start()} disabled={files.length === 0}>
-        |&gt; Start ({files.length})
+        ▶ Start ({files.length})
       </Btn>
       {sel.kind === 'root'
         ? <Btn onClick={() => vm.clearAll()} disabled={vm.files.length === 0}>Clear all</Btn>
         : excludeAction}
       <Btn onClick={() => vm.clearUnqueued(files)} disabled={!unqueued}>Clear unqueued</Btn>
       <Btn onClick={() => vm.cancelQueue()} disabled={!enqueued}>Cancel queue</Btn>
-      {processing && <StopBtn onClick={stopCurrent}>Stop</StopBtn>}
+      {processing && <StopBtn onClick={stopCurrent}>■ Stop</StopBtn>}
     </ActionRow>
     <Table>
       <thead><tr>

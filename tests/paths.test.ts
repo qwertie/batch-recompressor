@@ -1,10 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { outputPathFor, isExcluded, isInside, normPath } from '../shared/paths.js';
+import {
+  flatDisplayPath, outputPathFor, isExcluded, isInside, normPath,
+} from '../shared/paths.js';
 
 describe('normPath', () => {
   it('converts backslashes and strips trailing slash', () => {
     expect(normPath('C:\\A\\B\\')).toBe('C:/A/B');
     expect(normPath('/x/y/')).toBe('/x/y');
+  });
+});
+
+describe('flatDisplayPath', () => {
+  it('includes the added root name and relative Windows path', () => {
+    expect(flatDisplayPath('C:\\A\\B\\C\\D.mp4', 'C:\\A\\B'))
+      .toBe('B\\C\\D.mp4');
+  });
+
+  it('truncates a long added-root name', () => {
+    expect(flatDisplayPath(
+      'C:\\A\\LongFolderName\\C\\D.mp4',
+      'C:\\A\\LongFolderName',
+    )).toBe('LongFolderN...\\C\\D.mp4');
   });
 });
 

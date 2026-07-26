@@ -23,6 +23,8 @@ export class ViewModel {
   outputFolder = '';
   /** Re-encode even if the output file already exists. */
   overwrite = false;
+  /** Show nested root/directory nodes in the sidebar instead of flat file paths. */
+  showDirectoryTree = true;
   settings: EncodeSettings = { ...DEFAULT_SETTINGS };
   grouping: GroupingOptions = { ...DEFAULT_GROUPING };
   /** File extensions (lowercase, with dot) enabled for scanning. */
@@ -89,6 +91,8 @@ export class ViewModel {
 
   setOverwrite(v: boolean): void { this.overwrite = v; }
 
+  setShowDirectoryTree(v: boolean): void { this.showDirectoryTree = v; }
+
   setGrouping(field: keyof GroupingOptions, v: boolean): void { this.grouping[field] = v; }
 
   setExtEnabled(ext: string, enabled: boolean): void {
@@ -102,6 +106,7 @@ export class ViewModel {
 
   resetSettings(): void {
     this.settings = { ...DEFAULT_SETTINGS };
+    this.showDirectoryTree = true;
   }
 
   clearSelectionSettings(): void {
@@ -316,6 +321,7 @@ export class ViewModel {
         this.exclusions = s.exclusions ?? [];
         this.outputFolder = s.outputFolder ?? '';
         this.overwrite = s.overwrite ?? false;
+        this.showDirectoryTree = s.showDirectoryTree ?? true;
         this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
         this.grouping = { ...DEFAULT_GROUPING, ...s.grouping };
         this.enabledExts = s.enabledExts ?? [...ALL_EXTENSIONS];
@@ -328,6 +334,7 @@ export class ViewModel {
       exclusions: this.exclusions.slice(),
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
+      showDirectoryTree: this.showDirectoryTree,
       settings: { ...this.settings },
       grouping: { ...this.grouping },
       enabledExts: this.enabledExts.slice(),

@@ -4,7 +4,7 @@ A local web app for recompressing video, image and audio files in batch with
 ffmpeg. Add folders, and their media files are scanned (via ffprobe, which
 also classifies ambiguous containers) and grouped by kind, resolution,
 framerate (each toggleable) and *compression density* — a normalized unit
-where ~1 is typical: bits per pixel·second for video, bits per pixel for
+where ~1 is typical: bits per second per pixel for video, bits per pixel for
 images, bits per sample·channel for audio. Set a global target compression
 ratio (default 4x smaller) with density limits, or prefer a quality setting
 (always used for image formats), override settings per group or per file,

@@ -25,7 +25,7 @@ export async function shellOpen(filePath: string): Promise<void> {
 }
 
 export function explorerSelectArgument(filePath: string): string {
-  return `/select,"${filePath}"`;
+  return `/select,"${path.win32.normalize(filePath)}"`;
 }
 
 function spawnExplorer(filePath: string): Promise<void> {
