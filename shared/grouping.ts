@@ -2,7 +2,7 @@ import type { MediaFileInfo } from './types.js';
 import { density, densityUnit } from './encode.js';
 
 export interface FileGroup {
-  /** e.g. "1920x1080x30 ~0.92 b/px·s" */
+  /** e.g. "1920x1080 ~28.4fps ~0.92 b/px·s (17)" */
   label: string;
   key: string;
   /** Representative (median) density of the group. */
@@ -18,10 +18,11 @@ export interface GroupingOptions {
 }
 
 export const DEFAULT_GROUPING: GroupingOptions = { byResolution: true, byFps: true };
+export const DENSITY_CLUSTER_GAP = 0.25;
 
-/** Round fps for grouping purposes (29.97 -> 30, 23.976 -> 24). */
+/** Snap fps to 6-fps buckets for grouping (26 -> 24, 27 -> 30). */
 export function roundFps(fps: number): number {
-  return Math.round(fps);
+  return Math.round(fps / 6) * 6;
 }
 
 function bucketLabel(f: MediaFileInfo, o: GroupingOptions): string {
@@ -38,8 +39,9 @@ function bucketLabel(f: MediaFileInfo, o: GroupingOptions): string {
 
 /**
  * Group files by kind (+resolution/fps per options), then split each bucket
- * into density clusters such that no two files in one cluster differ by more
- * than 30% (max <= min * 1.3), using greedy clustering over sorted densities.
+ * into data-anchored density clusters. A new cluster starts when the next
+ * sorted file is more than 25% above the current cluster's median, so adjacent
+ * cluster representatives are meaningfully separated without fixed bands.
  */
 export function groupFiles(
   files: MediaFileInfo[], options: GroupingOptions = DEFAULT_GROUPING,
@@ -60,16 +62,29 @@ export function groupFiles(
       if (cluster.length === 0) return;
       const d = density(cluster[Math.floor(cluster.length / 2)]);
       const shown = d >= 10 ? Math.round(d) : d.toFixed(2);
+      const averageFps = cluster[0].kind === 'video' && options.byFps
+        ? cluster.reduce((sum, f) => sum + f.fps, 0) / cluster.length
+        : 0;
+      const displayLabel = averageFps
+        ? label.replace(/x\d+$/, '').replace(/^video \d+$/, 'video')
+        : label;
+      const fpsDetail = averageFps
+        ? ` ~${Number(averageFps.toFixed(1))}fps`
+        : '';
       groups.push({
-        label: `${label} ~${shown} ${densityUnit(cluster[0].kind)}`,
-        key: `${label}@${shown}`,
+        label: `${displayLabel}${fpsDetail} ~${shown} ${densityUnit(cluster[0].kind)} (${cluster.length})`,
+        key: `${label}@${density(cluster[0])}`,
         density: d,
         files: cluster,
       });
       cluster = [];
     };
     for (const f of bucket) {
-      if (cluster.length > 0 && density(f) > density(cluster[0]) * 1.3) flush();
+      const representative = cluster.length > 0
+        ? density(cluster[Math.floor(cluster.length / 2)])
+        : 0;
+      if (cluster.length > 0
+        && density(f) > representative * (1 + DENSITY_CLUSTER_GAP)) flush();
       cluster.push(f);
     }
     flush();

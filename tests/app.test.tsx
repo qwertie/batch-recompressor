@@ -33,7 +33,7 @@ describe('App', () => {
     });
     fireEvent.click(screen.getByText('Add folder'));
     await waitFor(() =>
-      expect(screen.getByText('1920x1080x30 ~0.96 b/px·s')).toBeTruthy());
+      expect(screen.getByText('1920x1080 ~30fps ~0.96 b/px·s (1)')).toBeTruthy());
     expect(screen.getAllByText('/in/sub/a.mp4').length).toBeGreaterThan(0);
   });
 

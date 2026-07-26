@@ -64,7 +64,7 @@ const TIPS: Partial<Record<keyof EncodeSettings, React.ReactNode>> = {
 
 const NUMERIC_FIELDS: { key: keyof EncodeSettings; label: string }[] = [
   { key: 'compressionRatio', label: 'Compression ratio (x smaller)' },
-  { key: 'minDensity', label: 'Min density (~1 is typical)' },
+  { key: 'minDensity', label: 'Min density' },
   { key: 'maxDensity', label: 'Max density' },
 ];
 

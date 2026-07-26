@@ -8,7 +8,7 @@ describe('ViewModel', () => {
     await vm.addFolder('/in');
     expect(vm.rootFolders).toEqual(['/in']);
     expect(vm.files).toHaveLength(2);
-    expect(vm.groups).toHaveLength(2); // densities >30% apart
+    expect(vm.groups).toHaveLength(2); // densities >25% apart
   });
 
   it('exclude removes a file from the tree and adds it to the list', async () => {
@@ -63,6 +63,38 @@ describe('ViewModel', () => {
     await vm.addFolder('/in');
     await vm.start();
     expect(vm.error).toMatch(/output folder/i);
+  });
+
+  it('cancelQueue reverts only waiting jobs to notQueued', async () => {
+    const fetcher = fakeFetch([]);
+    const vm = new ViewModel(fetcher);
+    vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
+    vm.applyJobUpdate({ path: '/in/b.mp4', status: 'enqueued', progress: 0 });
+    await vm.cancelQueue();
+    expect(vm.statusOf('/in/a.mp4')).toBe('processing');
+    expect(vm.statusOf('/in/b.mp4')).toBe('notQueued');
+    expect((fetcher as any).mock.calls.some(
+      (c: any[]) => String(c[0]).includes('/api/queue/cancel'))).toBe(true);
+  });
+
+  it('clearAll removes every scanned entry except the one processing', async () => {
+    const vm = new ViewModel(fakeFetch([
+      file('/in/a.mp4'), file('/in/b.mp4'), file('/in/c.mp4'),
+    ]));
+    await vm.addFolder('/in');
+    vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
+    vm.applyJobUpdate({ path: '/in/b.mp4', status: 'enqueued', progress: 0 });
+    await vm.clearAll();
+    expect(vm.files.map(f => f.path)).toEqual(['/in/a.mp4']);
+    expect(vm.statusOf('/in/a.mp4')).toBe('processing');
+  });
+
+  it('clearUnqueued removes only notQueued scanned entries', async () => {
+    const vm = new ViewModel(fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]));
+    await vm.addFolder('/in');
+    vm.applyJobUpdate({ path: '/in/b.mp4', status: 'finished', progress: 1 });
+    await vm.clearUnqueued();
+    expect(vm.files.map(f => f.path)).toEqual(['/in/b.mp4']);
   });
 
   it('selection drives selectedFiles', async () => {

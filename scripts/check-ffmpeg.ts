@@ -50,8 +50,18 @@ async function main(): Promise<void> {
   }
 
   const result = spawnSync(installer.cmd, installer.args, { stdio: 'inherit' });
-  if (result.status !== 0 || !(has('ffmpeg') && has('ffprobe'))) {
-    console.error('Installation did not succeed (you may need a new terminal for PATH changes).');
+  if (result.status !== 0) {
+    console.error(`\n${installer.name} could not install ffmpeg (exit code ${result.status}).`);
+    console.error('Please install it manually, then re-run: https://ffmpeg.org/download.html');
+    process.exit(1);
+  }
+  if (!(has('ffmpeg') && has('ffprobe'))) {
+    // The package manager succeeded, but it added ffmpeg to the PATH of *new*
+    // shells only — this already-running process can't see it yet.
+    const rerun = process.platform === 'win32' ? 'run install-and-run.bat again' : 're-run this command';
+    console.log('\nffmpeg was installed successfully.');
+    console.log('It is not on this shell\'s PATH yet — that only takes effect in new terminals.');
+    console.log(`Please close this window, open a new terminal, and ${rerun}.`);
     process.exit(1);
   }
   console.log('ffmpeg installed successfully.');

@@ -197,12 +197,59 @@ export class ViewModel {
     });
   }
 
-  async stop(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
-    await this.fetcher('/api/unqueue', {
+  /** Stop only the currently processing job. */
+  async stopCurrent(deletePartial = true): Promise<void> {
+    await this.fetcher('/api/queue/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: files.map(f => f.path) }),
+      body: JSON.stringify({ deletePartial }),
     });
+  }
+
+  /** Revert all waiting jobs to notQueued, leaving the active encode alone. */
+  async cancelQueue(): Promise<void> {
+    await this.fetcher('/api/queue/cancel', { method: 'POST' });
+    runInAction(() => {
+      for (const [path, job] of this.jobs)
+        if (job.status === 'enqueued')
+          this.jobs.set(path, { path, status: 'notQueued', progress: 0 });
+    });
+  }
+
+  /** Remove scanned entries from the UI; never delete source media. */
+  async clearEntries(paths: string[]): Promise<void> {
+    const processing = new Set([...this.jobs.values()]
+      .filter(j => j.status === 'processing').map(j => j.path));
+    const clearable = paths.filter(path => !processing.has(path));
+    if (clearable.length === 0) return;
+    await this.fetcher('/api/jobs/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: clearable }),
+    });
+    runInAction(() => {
+      const removed = new Set(clearable);
+      this.files = this.files.filter(f => !removed.has(f.path));
+      for (const path of removed) {
+        this.jobs.delete(path);
+        this.fileOverrides.delete(path);
+      }
+      this.rootFolders = this.rootFolders.filter(root =>
+        this.files.some(f => f.rootFolder === root));
+      this.selection = { kind: 'root' };
+    });
+  }
+
+  /** Clear every entry except the active encode; queued work is cancelled first. */
+  async clearAll(): Promise<void> {
+    await this.cancelQueue();
+    await this.clearEntries(this.files.map(f => f.path));
+  }
+
+  /** Clear entries which have never been queued or were cancelled. */
+  async clearUnqueued(files: MediaFileInfo[] = this.files): Promise<void> {
+    await this.clearEntries(files
+      .filter(f => this.statusOf(f.path) === 'notQueued').map(f => f.path));
   }
 
   applyJobUpdate(state: JobState): void {

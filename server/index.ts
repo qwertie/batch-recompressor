@@ -45,7 +45,21 @@ app.post('/api/enqueue', (req, res) => {
 
 // POST /api/unqueue { paths: string[] } — remove/cancel jobs
 app.post('/api/unqueue', (req, res) => {
-  for (const p of req.body?.paths ?? []) queue.unqueue(p);
+  for (const p of req.body?.paths ?? []) queue.unqueue(p, req.body?.deletePartial !== false);
+  res.json({ ok: true });
+});
+
+app.post('/api/queue/stop', (req, res) => {
+  res.json({ ok: true, stopped: queue.stopCurrent(req.body?.deletePartial !== false) });
+});
+
+app.post('/api/queue/cancel', (_req, res) => {
+  queue.cancelPending();
+  res.json({ ok: true });
+});
+
+app.post('/api/jobs/clear', (req, res) => {
+  queue.clear(req.body?.paths ?? []);
   res.json({ ok: true });
 });
 
