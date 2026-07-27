@@ -27,6 +27,9 @@ describe('App', () => {
     const numericInputs =
       [...document.querySelectorAll<HTMLInputElement>('input[type="number"]')];
     expect(numericInputs.slice(3, 6).map(input => input.value)).toEqual(['', '', '']);
+    const rangeInputs =
+      [...document.querySelectorAll<HTMLInputElement>('input[type="range"]')];
+    expect(rangeInputs.find(input => input.max === '10')?.value).toBe('8');
     expect(screen.getByText(/🖼 Images/)).toBeTruthy(); // file-type tree roots
     expect(screen.getByText(/🔊 Audio/)).toBeTruthy();
   });
@@ -41,6 +44,7 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByText('1920x1080 ~30fps ~0.96 b/s/px (1)')).toBeTruthy());
     expect(screen.getAllByText('/in/sub/a.mp4').length).toBeGreaterThan(0);
+    expect(screen.getByText(/0\.32 b\/s\/px/)).toBeTruthy();
   });
 
   it('shows compact root-relative paths directly below groups in flat mode', async () => {

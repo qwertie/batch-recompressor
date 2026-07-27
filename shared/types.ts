@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS: EncodeSettings = {
   videoCodec: 'av1',
   imageFormat: 'webp',
   audioCodec: 'opus',
-  effort: 6,
+  effort: 8,
   maxWidth: 0,
   maxHeight: 0,
   maxSampleRate: 0,

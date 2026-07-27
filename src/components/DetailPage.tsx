@@ -4,7 +4,9 @@ import { styled } from '../styled.js';
 import type { ViewModel } from '../viewmodel.js';
 import { SettingsEditor } from './SettingsEditor.js';
 import { FileTypeTree } from './FileTypeTree.js';
-import { density, densityUnit, estimatedSize, supportsQualityMode } from '../../shared/encode.js';
+import {
+  density, densityUnit, estimatedSize, supportsQualityMode, targetDensity,
+} from '../../shared/encode.js';
 import { Tip, DensityTip } from './Tip.js';
 
 const Page = styled('div')`flex: 1; padding: 12px 16px; overflow: auto;`;
@@ -250,6 +252,11 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
             ? ` (${fmtSize(job.outputSize)})` : '');
           const revealOutput = (status === 'processing' || status === 'finished')
             && job?.outputPath;
+          const usesDensity = f.kind !== 'image'
+            && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff));
+          const targetLabel = usesDensity
+            ? `~${fmtSize(estimatedSize(f, eff))}`
+            : `quality ${eff.quality}`;
           return <tr key={f.path}>
             <td style={{ wordBreak: 'break-all' }}>
               <TableLink title="Open file" onClick={() => vm.openFile(f.path)}>
@@ -258,9 +265,11 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
             </td>
             <td>{fmtSize(f.size)}</td>
             <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
-            <td>{f.kind !== 'image' && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff))
-              ? `~${fmtSize(estimatedSize(f, eff))}`
-              : `quality ${eff.quality}`}</td>
+            <td><Tip tip={<span>
+              <b>Target density:</b>{' '}
+              {targetDensity(f, eff).toFixed(2)} {densityUnit(f.kind)}
+              {!usesDensity && ' (not used in quality mode)'}
+            </span>}>{targetLabel}</Tip></td>
             <StatusCell status={status}>
               {revealOutput
                 ? <StatusLink title="Show output in file manager"

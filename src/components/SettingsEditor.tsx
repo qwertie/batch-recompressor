@@ -70,7 +70,7 @@ const TIPS: Partial<Record<keyof EncodeSettings, React.ReactNode>> = {
   </span>,
   effort: <span>
     How hard the encoder works: higher = slower but smaller/better output,
-    e.g. for AV1, effort <b>6</b> → SVT preset 6 (balanced) while <b>10</b> →
+    e.g. for AV1, effort <b>8</b> → SVT preset 4 while <b>10</b> →
     preset 2 (many times slower, a few % smaller). Mapped to
     <code> veryfast…veryslow</code> for x264/x265. Images ignore this.
   </span>,
