@@ -1,4 +1,4 @@
-import { makeAutoObservable, runInAction, autorun } from 'mobx';
+import { makeAutoObservable, runInAction } from 'mobx';
 import type {
   MediaFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
 } from '../shared/types.js';
@@ -6,12 +6,20 @@ import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { groupFiles, DEFAULT_GROUPING, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
 import { ALL_EXTENSIONS } from '../shared/filetypes.js';
 import { isExcluded, isInside, normPath } from '../shared/paths.js';
+import {
+  applyStateCommand, type AppState, type StateCommand, type StateSnapshot,
+} from '../shared/state.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
 export type Selection =
   | { kind: 'root' }
   | { kind: 'group'; key: string }
   | { kind: 'file'; path: string };
+
+interface PendingCommand {
+  command: StateCommand;
+  done: () => void;
+}
 
 export class ViewModel {
   /** Root folders added with the "Add folder" button. */
@@ -38,9 +46,19 @@ export class ViewModel {
   jobs = new Map<string, JobState>();
   selection: Selection = { kind: 'root' };
   scanning = false;
+  loadingState = false;
   error = '';
+  private serverOwned = false;
+  private revision = 0;
+  private pending: PendingCommand[] = [];
+  private syncing = false;
+  private lastSync: Promise<void> = Promise.resolve();
 
-  constructor(private fetcher: typeof fetch = fetch.bind(globalThis)) {
+  constructor(
+    private fetcher: typeof fetch = fetch.bind(globalThis),
+    private confirmReload: (message: string) => boolean =
+      message => globalThis.confirm(message),
+  ) {
     makeAutoObservable(this);
   }
 
@@ -89,14 +107,27 @@ export class ViewModel {
 
   select(sel: Selection): void { this.selection = sel; }
 
-  setOutputFolder(folder: string): void { this.outputFolder = folder; }
+  setOutputFolder(folder: string): void {
+    this.outputFolder = folder;
+    this.sync({ type: 'update', values: { outputFolder: folder } });
+  }
 
-  setOverwrite(v: boolean): void { this.overwrite = v; }
+  setOverwrite(v: boolean): void {
+    this.overwrite = v;
+    this.sync({ type: 'update', values: { overwrite: v } });
+  }
 
-  setShowDirectoryTree(v: boolean): void { this.showDirectoryTree = v; }
+  setShowDirectoryTree(v: boolean): void {
+    this.showDirectoryTree = v;
+    this.sync({ type: 'update', values: { showDirectoryTree: v } });
+  }
 
   setMaxConcurrent(v: number): void {
     this.maxConcurrent = Math.min(8, Math.max(1, Math.round(v) || 1));
+    if (this.serverOwned) {
+      this.sync({ type: 'update', values: { maxConcurrent: this.maxConcurrent } });
+      return;
+    }
     void this.fetcher('/api/queue/concurrency', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,26 +135,48 @@ export class ViewModel {
     }).catch(err => runInAction(() => { this.error = String(err.message ?? err); }));
   }
 
-  setGrouping(field: keyof GroupingOptions, v: boolean): void { this.grouping[field] = v; }
+  setGrouping(field: keyof GroupingOptions, v: boolean): void {
+    this.grouping[field] = v;
+    this.sync({ type: 'update', values: { grouping: { ...this.grouping } } });
+  }
 
   setExtEnabled(ext: string, enabled: boolean): void {
     if (enabled && !this.enabledExts.includes(ext)) this.enabledExts.push(ext);
     if (!enabled) this.enabledExts = this.enabledExts.filter(e => e !== ext);
+    this.sync({ type: 'update', values: { enabledExts: this.enabledExts.slice() } });
   }
 
   setSetting<K extends keyof EncodeSettings>(key: K, value: EncodeSettings[K]): void {
     this.settings[key] = value;
+    this.sync({ type: 'update', values: { settings: { ...this.settings } } });
   }
 
   resetSettings(): void {
     this.settings = { ...DEFAULT_SETTINGS };
     this.showDirectoryTree = true;
-    this.setMaxConcurrent(1);
+    this.maxConcurrent = 1;
+    this.sync({
+      type: 'update',
+      values: {
+        settings: { ...this.settings },
+        showDirectoryTree: true,
+        maxConcurrent: 1,
+      },
+    });
   }
 
   clearSelectionSettings(): void {
-    if (this.selection.kind === 'group') this.groupOverrides.delete(this.selection.key);
-    else if (this.selection.kind === 'file') this.fileOverrides.delete(this.selection.path);
+    if (this.selection.kind === 'group') {
+      this.groupOverrides.delete(this.selection.key);
+      this.sync({
+        type: 'setOverride', scope: 'group', key: this.selection.key, value: null,
+      });
+    } else if (this.selection.kind === 'file') {
+      this.fileOverrides.delete(this.selection.path);
+      this.sync({
+        type: 'setOverride', scope: 'file', key: this.selection.path, value: null,
+      });
+    }
   }
 
   setOverride(
@@ -136,29 +189,45 @@ export class ViewModel {
     else (o as any)[field] = value;
     if (Object.keys(o).length === 0) overrides.delete(key);
     else overrides.set(key, o);
+    this.sync({
+      type: 'setOverride',
+      scope: map,
+      key,
+      value: Object.keys(o).length === 0 ? null : o,
+    });
   }
 
   /** Exclude a file or folder path; removes it from the tree. */
   exclude(path: string): void {
     if (!this.exclusions.includes(normPath(path))) this.exclusions.push(normPath(path));
     this.selection = { kind: 'root' };
+    this.sync({ type: 'exclude', paths: [path] });
   }
 
   /** Exclude every file currently in a group. */
   excludeGroup(key: string): void {
+    const paths = (this.groupByKey(key)?.files ?? []).map(f => f.path);
     for (const f of this.groupByKey(key)?.files ?? []) {
       const p = normPath(f.path);
       if (!this.exclusions.includes(p)) this.exclusions.push(p);
     }
     this.selection = { kind: 'root' };
+    this.sync({ type: 'exclude', paths });
   }
 
   removeExclusion(path: string): void {
     this.exclusions = this.exclusions.filter(e => e !== path);
+    this.sync({ type: 'removeExclusion', path });
   }
 
   async addFolder(folder: string): Promise<void> {
     if (!folder) return;
+    if (this.serverOwned) {
+      this.scanning = true;
+      await this.enqueueCommand({ type: 'addFolder', folder });
+      runInAction(() => { this.scanning = false; });
+      return;
+    }
     this.scanning = true;
     this.error = '';
     try {
@@ -187,6 +256,12 @@ export class ViewModel {
 
   /** Re-scan all root folders, replacing their file lists (picks up new/removed files). */
   async rescanAll(): Promise<void> {
+    if (this.serverOwned) {
+      this.scanning = true;
+      await this.enqueueCommand({ type: 'rescan' });
+      runInAction(() => { this.scanning = false; });
+      return;
+    }
     for (const folder of [...this.rootFolders]) {
       this.files = this.files.filter(f => f.rootFolder !== folder);
       await this.addFolder(folder);
@@ -194,8 +269,10 @@ export class ViewModel {
   }
 
   removeRootFolder(folder: string): void {
-    this.rootFolders = this.rootFolders.filter(r => r !== folder);
-    this.files = this.files.filter(f => f.rootFolder !== folder);
+    const mirrored = this.editableState();
+    applyStateCommand(mirrored, { type: 'removeRoot', folder });
+    this.applyEditableState(mirrored);
+    this.sync({ type: 'removeRoot', folder });
   }
 
   /** Enqueue the given files (defaults to the current selection). */
@@ -205,6 +282,7 @@ export class ViewModel {
   }
 
   async start(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
+    if (this.serverOwned) await this.lastSync;
     const startable = files.filter(f => this.isStartable(f.path));
     if (startable.length === 0) return;
     if (!this.outputFolder) {
@@ -212,16 +290,26 @@ export class ViewModel {
       return;
     }
     const payload = {
-      outputFolder: this.outputFolder,
-      overwrite: this.overwrite,
-      maxConcurrent: this.maxConcurrent,
-      files: startable.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
+      ...(this.serverOwned
+        ? { paths: startable.map(f => f.path) }
+        : {
+          outputFolder: this.outputFolder,
+          overwrite: this.overwrite,
+          maxConcurrent: this.maxConcurrent,
+          files: startable.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
+        }),
     };
-    await this.fetcher('/api/enqueue', {
+    const res = await this.fetcher('/api/enqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) await this.handleConflict(data.error);
+      else runInAction(() => { this.error = data.error ?? 'Could not start the files.'; });
+      return;
+    }
     runInAction(() => {
       for (const f of startable) {
         const cur = this.jobs.get(f.path);
@@ -292,6 +380,10 @@ export class ViewModel {
 
   /** Clear every entry except the active encode; queued work is cancelled first. */
   async clearAll(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
+    if (this.serverOwned) {
+      await this.enqueueCommand({ type: 'clearAll' });
+      return;
+    }
     const roots = new Set(
       this.selection.kind === 'root'
         ? this.rootFolders
@@ -331,6 +423,13 @@ export class ViewModel {
 
   /** Clear entries which have never been queued or were cancelled. */
   async clearUnqueued(files: MediaFileInfo[] = this.files): Promise<void> {
+    if (this.serverOwned) {
+      await this.enqueueCommand({
+        type: 'clearUnqueued',
+        paths: files.map(f => f.path),
+      });
+      return;
+    }
     await this.clearEntries(files
       .filter(f => this.statusOf(f.path) === 'notQueued').map(f => f.path));
   }
@@ -377,30 +476,32 @@ export class ViewModel {
     this.jobs.set(state.path, state);
   }
 
-  /**
-   * Load persisted settings from `storage` and save on every change.
-   * Re-scans previously added folders after loading.
-   */
-  enablePersistence(storage: Pick<Storage, 'getItem' | 'setItem'>, key = 'batch-recompressor'): void {
-    const raw = storage.getItem(key);
-    if (raw) {
-      try {
-        const s = JSON.parse(raw);
-        this.rootFolders = s.rootFolders ?? [];
-        this.exclusions = s.exclusions ?? [];
-        this.outputFolder = s.outputFolder ?? '';
-        this.overwrite = s.overwrite ?? false;
-        this.showDirectoryTree = s.showDirectoryTree ?? true;
-        this.maxConcurrent = Math.min(8, Math.max(1, Math.round(s.maxConcurrent) || 1));
-        this.settings = { ...DEFAULT_SETTINGS, ...s.settings };
-        this.grouping = { ...DEFAULT_GROUPING, ...s.grouping };
-        this.enabledExts = s.enabledExts ?? [...ALL_EXTENSIONS];
-        this.groupOverrides = new Map(s.groupOverrides ?? []);
-        this.fileOverrides = new Map(s.fileOverrides ?? []);
-      } catch { /* corrupt state: start fresh */ }
+  /** Hydrate the browser mirror from the backend without touching the filesystem. */
+  async loadState(): Promise<void> {
+    this.loadingState = true;
+    this.serverOwned = true;
+    try {
+      const res = await this.fetcher('/api/state');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      runInAction(() => {
+        this.serverOwned = true;
+        this.applySnapshot(data as StateSnapshot);
+        this.error = '';
+      });
+    } catch (err: any) {
+      runInAction(() => {
+        this.error = `Could not load server state: ${String(err.message ?? err)}`;
+      });
+    } finally {
+      runInAction(() => { this.loadingState = false; });
     }
-    autorun(() => storage.setItem(key, JSON.stringify({
+  }
+
+  private editableState(): AppState {
+    return {
       rootFolders: this.rootFolders.slice(),
+      files: this.files.slice(),
       exclusions: this.exclusions.slice(),
       outputFolder: this.outputFolder,
       overwrite: this.overwrite,
@@ -411,8 +512,119 @@ export class ViewModel {
       enabledExts: this.enabledExts.slice(),
       groupOverrides: [...this.groupOverrides.entries()],
       fileOverrides: [...this.fileOverrides.entries()],
-    })));
-    if (this.rootFolders.length > 0) void this.rescanAll();
+    };
+  }
+
+  private applyEditableState(state: AppState): void {
+    this.rootFolders = state.rootFolders.slice();
+    this.files = state.files.slice();
+    this.exclusions = state.exclusions.slice();
+    this.outputFolder = state.outputFolder;
+    this.overwrite = state.overwrite;
+    this.showDirectoryTree = state.showDirectoryTree;
+    this.maxConcurrent = state.maxConcurrent;
+    this.settings = { ...DEFAULT_SETTINGS, ...state.settings };
+    this.grouping = { ...DEFAULT_GROUPING, ...state.grouping };
+    this.enabledExts = state.enabledExts.slice();
+    this.groupOverrides = new Map(state.groupOverrides);
+    this.fileOverrides = new Map(state.fileOverrides);
+    if (this.selection.kind === 'file' && !this.fileByPath(this.selection.path))
+      this.selection = { kind: 'root' };
+    if (this.selection.kind === 'group' && !this.groupByKey(this.selection.key))
+      this.selection = { kind: 'root' };
+  }
+
+  private applySnapshot(snapshot: StateSnapshot): void {
+    this.revision = snapshot.revision;
+    this.applyEditableState(snapshot.state);
+    this.jobs = new Map(snapshot.jobs.map(job => [job.path, job]));
+  }
+
+  private sync(command: StateCommand): void {
+    if (this.serverOwned) void this.enqueueCommand(command);
+  }
+
+  private enqueueCommand(command: StateCommand): Promise<void> {
+    const completion = new Promise<void>(resolve => {
+      this.pending.push({ command, done: resolve });
+      void this.drainCommands();
+    });
+    this.lastSync = completion;
+    return completion;
+  }
+
+  private async drainCommands(): Promise<void> {
+    if (this.syncing) return;
+    this.syncing = true;
+    try {
+      while (this.pending.length > 0) {
+        const current = this.pending[0];
+        let res: Response;
+        let data: any;
+        try {
+          res = await this.fetcher('/api/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              revision: this.revision,
+              command: current.command,
+            }),
+          });
+          data = await res.json();
+        } catch (err: any) {
+          await this.handleConflict(
+            `Could not confirm the change with the server: ${String(err.message ?? err)}`,
+          );
+          break;
+        }
+
+        if (!res.ok) {
+          if (res.status === 409) await this.handleConflict(data.error);
+          else {
+            const rejected = this.pending.shift()!;
+            runInAction(() => {
+              this.error = data.error ?? 'The server rejected the change.';
+            });
+            rejected.done();
+            continue;
+          }
+          this.finishPending();
+          break;
+        }
+
+        const completed = this.pending.shift()!;
+        runInAction(() => {
+          this.revision = data.revision;
+          if (data.state) {
+            this.applySnapshot(data as StateSnapshot);
+            const mirrored = this.editableState();
+            for (const pending of this.pending)
+              applyStateCommand(mirrored, pending.command);
+            this.applyEditableState(mirrored);
+          }
+          this.error = '';
+        });
+        completed.done();
+      }
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private finishPending(): void {
+    for (const pending of this.pending.splice(0)) pending.done();
+  }
+
+  private async handleConflict(message = 'The server state no longer matches this page.'): Promise<void> {
+    this.finishPending();
+    const reload = this.confirmReload(`${message}\n\nReload state from the server?`);
+    if (reload) {
+      await this.loadState();
+    } else {
+      runInAction(() => {
+        this.error = `${message} Reload the page before making more changes.`;
+      });
+    }
   }
 
   /** Subscribe to the server's SSE job-update stream. */

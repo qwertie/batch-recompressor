@@ -13,6 +13,21 @@ structure under the output folder. Built with React 18, TypeScript, MobX and
 goober (CSS-in-JS), with a small Express backend that does the scanning and
 runs ffmpeg.
 
+## Architecture
+
+The Express process owns the authoritative in-memory application state:
+the scanned tree, folder associations, exclusions, encoding preferences and
+overrides. The browser hydrates a MobX mirror from `GET /api/state`; refreshing
+the page therefore restores the existing tree without scanning the filesystem.
+
+Edits are expressed as small commands shared by the frontend and backend and
+are checked against a monotonically increasing revision. The browser applies
+deterministic edits optimistically and sends them in order. Scans and clears
+run on the server and return an authoritative snapshot. If a revision is stale
+or an edited object is missing, the app offers to reload its mirror from the
+server. Queue execution is also server-owned, with job progress mirrored over
+server-sent events.
+
 ## Requirements
 
 - Node.js 22+ must be installed and on your PATH.

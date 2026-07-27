@@ -28,7 +28,7 @@ const Sidebar = styled('div')`
 export const App = observer(function App(props: { vm?: ViewModel }) {
   const vm = useMemo(() => props.vm ?? new ViewModel(), [props.vm]);
   useEffect(() => {
-    if (!props.vm) vm.enablePersistence(localStorage); // tests pass their own vm
+    if (!props.vm) void vm.loadState(); // tests pass a detached in-memory mirror
     if (typeof EventSource !== 'undefined') vm.connectEvents();
   }, [vm, props.vm]);
   return <Layout>

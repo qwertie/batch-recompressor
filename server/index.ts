@@ -2,33 +2,49 @@ import express from 'express';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { scanFolder } from './scan.js';
 import { EncodeQueue } from './queue.js';
+import { AppStateStore, StateConflict } from './state.js';
 import { revealInFileManager, shellOpen } from './shell.js';
-import type { EnqueueRequest, JobState } from '../shared/types.js';
+import type { JobState } from '../shared/types.js';
+import type { StateCommand } from '../shared/state.js';
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 const queue = new EncodeQueue();
+const state = new AppStateStore(queue);
 
-// POST /api/scan { folder, outputFolder, exclusions, extensions } -> MediaFileInfo[]
-app.post('/api/scan', async (req, res) => {
-  const { folder, outputFolder = '', exclusions = [], extensions } = req.body ?? {};
-  if (!folder || !fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
-    res.status(400).json({ error: `Not a folder: ${folder}` });
-    return;
-  }
+app.get('/api/state', (_req, res) => res.json(state.snapshot()));
+
+app.post('/api/state', async (req, res) => {
   try {
-    res.json(await scanFolder(folder, outputFolder, exclusions, extensions));
+    const snapshot = await state.dispatch(
+      req.body?.command as StateCommand,
+      Number(req.body?.revision),
+    );
+    const structural = ['addFolder', 'rescan', 'clearAll', 'clearUnqueued']
+      .includes(req.body?.command?.type);
+    res.json(structural
+      ? snapshot
+      : { revision: snapshot.revision });
   } catch (err: any) {
-    res.status(500).json({ error: String(err.message ?? err) });
+    res.status(err instanceof StateConflict ? 409 : 400).json({
+      error: String(err.message ?? err),
+      revision: state.snapshot().revision,
+    });
   }
 });
 
-// POST /api/enqueue { files: [{info, settings}], outputFolder } — add jobs to the queue
+// POST /api/enqueue { paths } — server resolves authoritative metadata/settings.
 app.post('/api/enqueue', (req, res) => {
-  const body = req.body as EnqueueRequest;
+  let body;
+  try {
+    body = state.enqueueRequest(req.body?.paths ?? []);
+  } catch (err: any) {
+    res.status(err instanceof StateConflict ? 409 : 400)
+      .json({ error: String(err.message ?? err) });
+    return;
+  }
   if (!body?.outputFolder) {
     res.status(400).json({ error: 'outputFolder is required' });
     return;
@@ -48,16 +64,6 @@ app.post('/api/enqueue', (req, res) => {
 // POST /api/unqueue { paths: string[] } — remove/cancel jobs
 app.post('/api/unqueue', (req, res) => {
   for (const p of req.body?.paths ?? []) queue.unqueue(p, req.body?.deletePartial !== false);
-  res.json({ ok: true });
-});
-
-app.post('/api/queue/concurrency', (req, res) => {
-  queue.setMaxConcurrent(Number(req.body?.maxConcurrent));
-  res.json({ ok: true });
-});
-
-app.post('/api/jobs/clear', (req, res) => {
-  queue.clear(req.body?.paths ?? []);
   res.json({ ok: true });
 });
 
