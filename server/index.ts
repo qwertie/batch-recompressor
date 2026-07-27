@@ -1,6 +1,7 @@
 import express from 'express';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { EncodeQueue } from './queue.js';
 import { AppStateStore, StateConflict } from './state.js';
@@ -12,7 +13,9 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 const queue = new EncodeQueue();
-const state = new AppStateStore(queue);
+const stateFile = process.env.BATCH_RECOMPRESSOR_STATE_FILE
+  ?? path.join(os.homedir(), '.batch-recompressor', 'state.json');
+const state = new AppStateStore(queue, { stateFile });
 
 app.get('/api/state', (_req, res) => res.json(state.snapshot()));
 

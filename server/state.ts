@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
   applyStateCommand, cloneAppState, effectiveSettingsFor, initialAppState, removeStateEntries,
   type AppState, type StateCommand, type StateSnapshot,
@@ -13,18 +14,38 @@ export class StateConflict extends Error {}
 type Scan = typeof scanFolder;
 type IsFolder = (folder: string) => boolean;
 
-/** Single-user, in-memory source of truth for the editable application state. */
+interface StateStoreOptions {
+  scan?: Scan;
+  isFolder?: IsFolder;
+  stateFile?: string;
+}
+
+interface PersistedState {
+  version: 1;
+  revision: number;
+  state: AppState;
+}
+
+/** Single-user source of truth for editable state, optionally persisted to disk. */
 export class AppStateStore {
   private state: AppState = initialAppState();
   private revision = 0;
+  private scan: Scan;
+  private isFolder: IsFolder;
+  private stateFile?: string;
 
   constructor(
     private queue: Pick<EncodeQueue,
       'getStates' | 'setMaxConcurrent' | 'unqueue' | 'clear'>,
-    private scan: Scan = scanFolder,
-    private isFolder: IsFolder = folder =>
-      Boolean(folder && fs.existsSync(folder) && fs.statSync(folder).isDirectory()),
-  ) {}
+    options: StateStoreOptions = {},
+  ) {
+    this.scan = options.scan ?? scanFolder;
+    this.isFolder = options.isFolder ?? (folder =>
+      Boolean(folder && fs.existsSync(folder) && fs.statSync(folder).isDirectory()));
+    this.stateFile = options.stateFile;
+    this.load();
+    this.queue.setMaxConcurrent(this.state.maxConcurrent);
+  }
 
   snapshot(): StateSnapshot {
     return {
@@ -76,7 +97,40 @@ export class AppStateStore {
       }
     }
     this.revision++;
+    await this.persist();
     return this.snapshot();
+  }
+
+  private load(): void {
+    if (!this.stateFile) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.stateFile, 'utf8')) as PersistedState;
+      if (saved.version !== 1 || !saved.state) throw new Error('Unsupported state file');
+      const defaults = initialAppState();
+      this.state = {
+        ...defaults,
+        ...saved.state,
+        settings: { ...defaults.settings, ...saved.state.settings },
+        grouping: { ...defaults.grouping, ...saved.state.grouping },
+      };
+      this.revision = Math.max(0, Math.floor(saved.revision) || 0);
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT')
+        console.error(`Could not load state from ${this.stateFile}:`, error);
+    }
+  }
+
+  private async persist(): Promise<void> {
+    if (!this.stateFile) return;
+    const data: PersistedState = {
+      version: 1,
+      revision: this.revision,
+      state: this.state,
+    };
+    await fs.promises.mkdir(path.dirname(this.stateFile), { recursive: true });
+    const temporary = `${this.stateFile}.${process.pid}.tmp`;
+    await fs.promises.writeFile(temporary, JSON.stringify(data), 'utf8');
+    await fs.promises.rename(temporary, this.stateFile);
   }
 
   private expectRevision(expected: number): void {

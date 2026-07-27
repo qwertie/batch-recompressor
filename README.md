@@ -28,6 +28,11 @@ or an edited object is missing, the app offers to reload its mirror from the
 server. Queue execution is also server-owned, with job progress mirrored over
 server-sent events.
 
+The authoritative state is saved atomically to
+`~/.batch-recompressor/state.json` and restored after a backend restart. Set
+`BATCH_RECOMPRESSOR_STATE_FILE` to use a different location. Active encoder
+processes and queue progress remain transient.
+
 ## Requirements
 
 - Node.js 22+ must be installed and on your PATH.

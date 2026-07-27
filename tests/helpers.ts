@@ -48,7 +48,7 @@ export function fakeFetch(scanResult: MediaFileInfo[] = []) {
     _folder: string, _output: string, _exclusions: string[], extensions: string[] = [],
   ) => scanResult.filter(info =>
     extensions.some(ext => info.path.toLowerCase().endsWith(ext))));
-  const store = new AppStateStore(queue, scan, () => true);
+  const store = new AppStateStore(queue, { scan, isFolder: () => true });
   const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url);
     const body = init?.body ? JSON.parse(String(init.body)) : {};
