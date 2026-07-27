@@ -1,3 +1,5 @@
+![Batch Recompressor](screenshot.png)
+
 # Batch Recompressor
 
 A local web app for recompressing video, image and audio files in batch with

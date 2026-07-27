@@ -92,17 +92,18 @@ export class EncodeQueue extends EventEmitter {
   private async run(job: Job, state: JobState): Promise<void> {
     const f = job.info;
     let outputStarted = false;
+    let incompletePath: string | undefined;
     state.status = 'processing';
     state.progress = 0;
     this.emit('update', state);
     try {
       const outPath = outputPathFor(
         f.path, f.rootFolder, job.outputFolder, outputExt(f.kind, job.settings));
-      state.outputPath = outPath;
       if (!job.overwrite) {
         // Skip work that's already done: existing non-empty output counts as finished.
         const existing = await fs.stat(outPath).catch(() => null);
         if (existing && existing.size > 0) {
+          state.outputPath = outPath;
           state.status = 'finished';
           state.progress = 1;
           state.outputSize = existing.size;
@@ -115,7 +116,9 @@ export class EncodeQueue extends EventEmitter {
       if (this.cancelRequests.has(f.path)) throw new Error('cancelled');
       await fs.mkdir(path.dirname(outPath), { recursive: true });
       if (this.cancelRequests.has(f.path)) throw new Error('cancelled');
-      const args = ffmpegArgs(f, outPath, job.settings);
+      incompletePath = path.join(path.dirname(outPath), `incomplete.${path.basename(outPath)}`);
+      state.outputPath = incompletePath;
+      const args = ffmpegArgs(f, incompletePath, job.settings);
       await new Promise<void>((resolve, reject) => {
         const proc = this.spawnProcess('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
         outputStarted = true;
@@ -139,15 +142,18 @@ export class EncodeQueue extends EventEmitter {
           else reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail.split('\n').slice(-4).join(' ')}`));
         });
       });
+      if (job.overwrite) await fs.rm(outPath, { force: true });
+      await fs.rename(incompletePath, outPath);
+      state.outputPath = outPath;
       state.status = 'finished';
       state.progress = 1;
-      try { state.outputSize = (await fs.stat(state.outputPath)).size; } catch { /* ignore */ }
+      try { state.outputSize = (await fs.stat(outPath)).size; } catch { /* ignore */ }
     } catch (err: any) {
       if (err.message === 'cancelled') {
         state.status = 'notQueued';
         state.progress = 0;
-        if (outputStarted && state.outputPath && this.cancelRequests.get(f.path) !== false)
-          await fs.rm(state.outputPath, { force: true }).catch(() => {});
+        if (outputStarted && incompletePath && this.cancelRequests.get(f.path) !== false)
+          await fs.rm(incompletePath, { force: true }).catch(() => {});
       } else {
         state.status = 'error';
         state.error = String(err.message ?? err);
