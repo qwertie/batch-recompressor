@@ -3,11 +3,11 @@ import type {
   MediaFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
 } from '../shared/types.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
-import { groupFiles, DEFAULT_GROUPING, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
-import { ALL_EXTENSIONS } from '../shared/filetypes.js';
-import { isExcluded, isInside, normPath } from '../shared/paths.js';
+import { groupFiles, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
+import { isExcluded } from '../shared/paths.js';
 import {
-  applyStateCommand, type AppState, type StateCommand, type StateSnapshot,
+  applyStateCommand, effectiveSettingsFor, initialAppState,
+  type AppState, type StateCommand, type StateSnapshot,
 } from '../shared/state.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
@@ -22,33 +22,13 @@ interface PendingCommand {
 }
 
 export class ViewModel {
-  /** Root folders added with the "Add folder" button. */
-  rootFolders: string[] = [];
-  /** All scanned (non-excluded) media files. */
-  files: MediaFileInfo[] = [];
-  /** Paths (files or folders) hidden from the tree. */
-  exclusions: string[] = [];
-  outputFolder = '';
-  /** Re-encode even if the output file already exists. */
-  overwrite = false;
-  /** Show nested root/directory nodes in the sidebar instead of flat file paths. */
-  showDirectoryTree = true;
-  /** Maximum number of FFmpeg processes allowed to run at once. */
-  maxConcurrent = 1;
-  settings: EncodeSettings = { ...DEFAULT_SETTINGS };
-  grouping: GroupingOptions = { ...DEFAULT_GROUPING };
-  /** File extensions (lowercase, with dot) enabled for scanning. */
-  enabledExts: string[] = [...ALL_EXTENSIONS];
-  /** Per-group and per-file setting overrides, keyed by group key / file path. */
-  groupOverrides = new Map<string, SettingsOverride>();
-  fileOverrides = new Map<string, SettingsOverride>();
+  private state: AppState = initialAppState();
   /** Job states received from the server, keyed by file path. */
   jobs = new Map<string, JobState>();
   selection: Selection = { kind: 'root' };
   scanning = false;
   loadingState = false;
   error = '';
-  private serverOwned = false;
   private revision = 0;
   private pending: PendingCommand[] = [];
   private syncing = false;
@@ -63,6 +43,23 @@ export class ViewModel {
   }
 
   // ---- derived state ----
+
+  get rootFolders(): string[] { return this.state.rootFolders; }
+  get files(): MediaFileInfo[] { return this.state.files; }
+  get exclusions(): string[] { return this.state.exclusions; }
+  get outputFolder(): string { return this.state.outputFolder; }
+  get overwrite(): boolean { return this.state.overwrite; }
+  get showDirectoryTree(): boolean { return this.state.showDirectoryTree; }
+  get maxConcurrent(): number { return this.state.maxConcurrent; }
+  get settings(): EncodeSettings { return this.state.settings; }
+  get grouping(): GroupingOptions { return this.state.grouping; }
+  get enabledExts(): string[] { return this.state.enabledExts; }
+  get groupOverrides(): Map<string, SettingsOverride> {
+    return new Map(this.state.groupOverrides);
+  }
+  get fileOverrides(): Map<string, SettingsOverride> {
+    return new Map(this.state.fileOverrides);
+  }
 
   get visibleFiles(): MediaFileInfo[] {
     return this.files.filter(f => !isExcluded(f.path, this.outputFolder, this.exclusions));
@@ -82,12 +79,7 @@ export class ViewModel {
 
   /** Effective settings for a file: global <- group override <- file override. */
   effectiveSettings(file: MediaFileInfo): EncodeSettings {
-    const group = this.groups.find(g => g.files.some(f => f.path === file.path));
-    return {
-      ...this.settings,
-      ...(group ? this.groupOverrides.get(group.key) : undefined),
-      ...this.fileOverrides.get(file.path),
-    };
+    return effectiveSettingsFor(this.state, file);
   }
 
   statusOf(path: string): JobStatus {
@@ -108,57 +100,47 @@ export class ViewModel {
   select(sel: Selection): void { this.selection = sel; }
 
   setOutputFolder(folder: string): void {
-    this.outputFolder = folder;
-    this.sync({ type: 'update', values: { outputFolder: folder } });
+    this.change({ type: 'update', values: { outputFolder: folder } });
   }
 
   setOverwrite(v: boolean): void {
-    this.overwrite = v;
-    this.sync({ type: 'update', values: { overwrite: v } });
+    this.change({ type: 'update', values: { overwrite: v } });
   }
 
   setShowDirectoryTree(v: boolean): void {
-    this.showDirectoryTree = v;
-    this.sync({ type: 'update', values: { showDirectoryTree: v } });
+    this.change({ type: 'update', values: { showDirectoryTree: v } });
   }
 
   setMaxConcurrent(v: number): void {
-    this.maxConcurrent = Math.min(8, Math.max(1, Math.round(v) || 1));
-    if (this.serverOwned) {
-      this.sync({ type: 'update', values: { maxConcurrent: this.maxConcurrent } });
-      return;
-    }
-    void this.fetcher('/api/queue/concurrency', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxConcurrent: this.maxConcurrent }),
-    }).catch(err => runInAction(() => { this.error = String(err.message ?? err); }));
+    this.change({ type: 'update', values: { maxConcurrent: v } });
   }
 
   setGrouping(field: keyof GroupingOptions, v: boolean): void {
-    this.grouping[field] = v;
-    this.sync({ type: 'update', values: { grouping: { ...this.grouping } } });
+    this.change({
+      type: 'update',
+      values: { grouping: { ...this.grouping, [field]: v } },
+    });
   }
 
   setExtEnabled(ext: string, enabled: boolean): void {
-    if (enabled && !this.enabledExts.includes(ext)) this.enabledExts.push(ext);
-    if (!enabled) this.enabledExts = this.enabledExts.filter(e => e !== ext);
-    this.sync({ type: 'update', values: { enabledExts: this.enabledExts.slice() } });
+    const enabledExts = enabled
+      ? [...new Set([...this.enabledExts, ext])]
+      : this.enabledExts.filter(e => e !== ext);
+    this.change({ type: 'update', values: { enabledExts } });
   }
 
   setSetting<K extends keyof EncodeSettings>(key: K, value: EncodeSettings[K]): void {
-    this.settings[key] = value;
-    this.sync({ type: 'update', values: { settings: { ...this.settings } } });
+    this.change({
+      type: 'update',
+      values: { settings: { ...this.settings, [key]: value } },
+    });
   }
 
   resetSettings(): void {
-    this.settings = { ...DEFAULT_SETTINGS };
-    this.showDirectoryTree = true;
-    this.maxConcurrent = 1;
-    this.sync({
+    this.change({
       type: 'update',
       values: {
-        settings: { ...this.settings },
+        settings: { ...DEFAULT_SETTINGS },
         showDirectoryTree: true,
         maxConcurrent: 1,
       },
@@ -167,13 +149,11 @@ export class ViewModel {
 
   clearSelectionSettings(): void {
     if (this.selection.kind === 'group') {
-      this.groupOverrides.delete(this.selection.key);
-      this.sync({
+      this.change({
         type: 'setOverride', scope: 'group', key: this.selection.key, value: null,
       });
     } else if (this.selection.kind === 'file') {
-      this.fileOverrides.delete(this.selection.path);
-      this.sync({
+      this.change({
         type: 'setOverride', scope: 'file', key: this.selection.path, value: null,
       });
     }
@@ -187,9 +167,7 @@ export class ViewModel {
     const o = { ...overrides.get(key) };
     if (value === undefined || value === '') delete o[field];
     else (o as any)[field] = value;
-    if (Object.keys(o).length === 0) overrides.delete(key);
-    else overrides.set(key, o);
-    this.sync({
+    this.change({
       type: 'setOverride',
       scope: map,
       key,
@@ -199,80 +177,37 @@ export class ViewModel {
 
   /** Exclude a file or folder path; removes it from the tree. */
   exclude(path: string): void {
-    if (!this.exclusions.includes(normPath(path))) this.exclusions.push(normPath(path));
+    this.change({ type: 'exclude', paths: [path] });
     this.selection = { kind: 'root' };
-    this.sync({ type: 'exclude', paths: [path] });
   }
 
   /** Exclude every file currently in a group. */
   excludeGroup(key: string): void {
     const paths = (this.groupByKey(key)?.files ?? []).map(f => f.path);
-    for (const f of this.groupByKey(key)?.files ?? []) {
-      const p = normPath(f.path);
-      if (!this.exclusions.includes(p)) this.exclusions.push(p);
-    }
+    this.change({ type: 'exclude', paths });
     this.selection = { kind: 'root' };
-    this.sync({ type: 'exclude', paths });
   }
 
   removeExclusion(path: string): void {
-    this.exclusions = this.exclusions.filter(e => e !== path);
-    this.sync({ type: 'removeExclusion', path });
+    this.change({ type: 'removeExclusion', path });
   }
 
   async addFolder(folder: string): Promise<void> {
     if (!folder) return;
-    if (this.serverOwned) {
-      this.scanning = true;
-      await this.enqueueCommand({ type: 'addFolder', folder });
-      runInAction(() => { this.scanning = false; });
-      return;
-    }
     this.scanning = true;
-    this.error = '';
-    try {
-      const res = await this.fetcher('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folder, outputFolder: this.outputFolder, exclusions: this.exclusions,
-          extensions: this.enabledExts.slice(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? res.statusText);
-      runInAction(() => {
-        if (!this.rootFolders.includes(folder)) this.rootFolders.push(folder);
-        const newFiles = (data as MediaFileInfo[])
-          .filter(f => !this.files.some(x => x.path === f.path));
-        this.files.push(...newFiles);
-      });
-    } catch (err: any) {
-      runInAction(() => { this.error = String(err.message ?? err); });
-    } finally {
-      runInAction(() => { this.scanning = false; });
-    }
+    await this.enqueueCommand({ type: 'addFolder', folder });
+    runInAction(() => { this.scanning = false; });
   }
 
   /** Re-scan all root folders, replacing their file lists (picks up new/removed files). */
   async rescanAll(): Promise<void> {
-    if (this.serverOwned) {
-      this.scanning = true;
-      await this.enqueueCommand({ type: 'rescan' });
-      runInAction(() => { this.scanning = false; });
-      return;
-    }
-    for (const folder of [...this.rootFolders]) {
-      this.files = this.files.filter(f => f.rootFolder !== folder);
-      await this.addFolder(folder);
-    }
+    this.scanning = true;
+    await this.enqueueCommand({ type: 'rescan' });
+    runInAction(() => { this.scanning = false; });
   }
 
   removeRootFolder(folder: string): void {
-    const mirrored = this.editableState();
-    applyStateCommand(mirrored, { type: 'removeRoot', folder });
-    this.applyEditableState(mirrored);
-    this.sync({ type: 'removeRoot', folder });
+    this.change({ type: 'removeRoot', folder });
   }
 
   /** Enqueue the given files (defaults to the current selection). */
@@ -282,27 +217,17 @@ export class ViewModel {
   }
 
   async start(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
-    if (this.serverOwned) await this.lastSync;
+    await this.lastSync;
     const startable = files.filter(f => this.isStartable(f.path));
     if (startable.length === 0) return;
     if (!this.outputFolder) {
       this.error = 'Set an output folder first.';
       return;
     }
-    const payload = {
-      ...(this.serverOwned
-        ? { paths: startable.map(f => f.path) }
-        : {
-          outputFolder: this.outputFolder,
-          overwrite: this.overwrite,
-          maxConcurrent: this.maxConcurrent,
-          files: startable.map(f => ({ info: f, settings: this.effectiveSettings(f) })),
-        }),
-    };
     const res = await this.fetcher('/api/enqueue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ paths: startable.map(f => f.path) }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -354,84 +279,17 @@ export class ViewModel {
     });
   }
 
-  /** Remove scanned entries from the UI; never delete source media. */
-  async clearEntries(paths: string[]): Promise<void> {
-    const processing = new Set([...this.jobs.values()]
-      .filter(j => j.status === 'processing').map(j => j.path));
-    const clearable = paths.filter(path => !processing.has(path));
-    if (clearable.length === 0) return;
-    await this.fetcher('/api/jobs/clear', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: clearable }),
-    });
-    runInAction(() => {
-      const removed = new Set(clearable);
-      this.files = this.files.filter(f => !removed.has(f.path));
-      for (const path of removed) {
-        this.jobs.delete(path);
-        this.fileOverrides.delete(path);
-      }
-      this.rootFolders = this.rootFolders.filter(root =>
-        this.files.some(f => f.rootFolder === root));
-      this.selection = { kind: 'root' };
-    });
-  }
-
   /** Clear every entry except the active encode; queued work is cancelled first. */
-  async clearAll(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
-    if (this.serverOwned) {
-      await this.enqueueCommand({ type: 'clearAll' });
-      return;
-    }
-    const roots = new Set(
-      this.selection.kind === 'root'
-        ? this.rootFolders
-        : files.map(f => f.rootFolder),
-    );
-    const entries = this.files.filter(f => roots.has(f.rootFolder));
-    const paths = new Set(entries.map(f => f.path));
-    const groupKeys = this.groups
-      .filter(group => group.files.some(f => paths.has(f.path)))
-      .map(group => group.key);
-
-    await this.cancelQueue(entries);
-    await this.clearEntries(entries.map(f => f.path));
-
-    runInAction(() => {
-      const clearedRoots = [...roots].filter(root =>
-        !this.files.some(f => f.rootFolder === root));
-      if (clearedRoots.length > 0) {
-        this.rootFolders = this.rootFolders.filter(root => !clearedRoots.includes(root));
-        this.exclusions = this.exclusions.filter(exclusion =>
-          !clearedRoots.some(root => isInside(exclusion, root)));
-        for (const path of this.fileOverrides.keys()) {
-          if (clearedRoots.some(root => isInside(path, root)))
-            this.fileOverrides.delete(path);
-        }
-        for (const path of this.jobs.keys()) {
-          if (clearedRoots.some(root => isInside(path, root))) this.jobs.delete(path);
-        }
-      }
-
-      const remainingGroupKeys = new Set(this.groups.map(group => group.key));
-      for (const key of groupKeys) {
-        if (!remainingGroupKeys.has(key)) this.groupOverrides.delete(key);
-      }
-    });
+  async clearAll(): Promise<void> {
+    await this.enqueueCommand({ type: 'clearAll' });
   }
 
   /** Clear entries which have never been queued or were cancelled. */
   async clearUnqueued(files: MediaFileInfo[] = this.files): Promise<void> {
-    if (this.serverOwned) {
-      await this.enqueueCommand({
-        type: 'clearUnqueued',
-        paths: files.map(f => f.path),
-      });
-      return;
-    }
-    await this.clearEntries(files
-      .filter(f => this.statusOf(f.path) === 'notQueued').map(f => f.path));
+    await this.enqueueCommand({
+      type: 'clearUnqueued',
+      paths: files.map(f => f.path),
+    });
   }
 
   async revealInFileManager(path: string): Promise<void> {
@@ -479,13 +337,11 @@ export class ViewModel {
   /** Hydrate the browser mirror from the backend without touching the filesystem. */
   async loadState(): Promise<void> {
     this.loadingState = true;
-    this.serverOwned = true;
     try {
       const res = await this.fetcher('/api/state');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? res.statusText);
       runInAction(() => {
-        this.serverOwned = true;
         this.applySnapshot(data as StateSnapshot);
         this.error = '';
       });
@@ -498,36 +354,8 @@ export class ViewModel {
     }
   }
 
-  private editableState(): AppState {
-    return {
-      rootFolders: this.rootFolders.slice(),
-      files: this.files.slice(),
-      exclusions: this.exclusions.slice(),
-      outputFolder: this.outputFolder,
-      overwrite: this.overwrite,
-      showDirectoryTree: this.showDirectoryTree,
-      maxConcurrent: this.maxConcurrent,
-      settings: { ...this.settings },
-      grouping: { ...this.grouping },
-      enabledExts: this.enabledExts.slice(),
-      groupOverrides: [...this.groupOverrides.entries()],
-      fileOverrides: [...this.fileOverrides.entries()],
-    };
-  }
-
   private applyEditableState(state: AppState): void {
-    this.rootFolders = state.rootFolders.slice();
-    this.files = state.files.slice();
-    this.exclusions = state.exclusions.slice();
-    this.outputFolder = state.outputFolder;
-    this.overwrite = state.overwrite;
-    this.showDirectoryTree = state.showDirectoryTree;
-    this.maxConcurrent = state.maxConcurrent;
-    this.settings = { ...DEFAULT_SETTINGS, ...state.settings };
-    this.grouping = { ...DEFAULT_GROUPING, ...state.grouping };
-    this.enabledExts = state.enabledExts.slice();
-    this.groupOverrides = new Map(state.groupOverrides);
-    this.fileOverrides = new Map(state.fileOverrides);
+    this.state = state;
     if (this.selection.kind === 'file' && !this.fileByPath(this.selection.path))
       this.selection = { kind: 'root' };
     if (this.selection.kind === 'group' && !this.groupByKey(this.selection.key))
@@ -540,8 +368,9 @@ export class ViewModel {
     this.jobs = new Map(snapshot.jobs.map(job => [job.path, job]));
   }
 
-  private sync(command: StateCommand): void {
-    if (this.serverOwned) void this.enqueueCommand(command);
+  private change(command: StateCommand): void {
+    applyStateCommand(this.state, command);
+    void this.enqueueCommand(command);
   }
 
   private enqueueCommand(command: StateCommand): Promise<void> {
@@ -597,10 +426,8 @@ export class ViewModel {
           this.revision = data.revision;
           if (data.state) {
             this.applySnapshot(data as StateSnapshot);
-            const mirrored = this.editableState();
             for (const pending of this.pending)
-              applyStateCommand(mirrored, pending.command);
-            this.applyEditableState(mirrored);
+              applyStateCommand(this.state, pending.command);
           }
           this.error = '';
         });

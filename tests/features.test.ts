@@ -145,28 +145,13 @@ describe('excludeGroup', () => {
 describe('rescanAll', () => {
   it('replaces files of each root folder', async () => {
     let result = [file('/in/a.mp4')];
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => ({
-      ok: true,
-      json: async () => (String(url).includes('/api/scan') ? result : { ok: true }),
-    })) as unknown as typeof fetch;
+    const fetcher = fakeFetch(result);
+    fetcher.scan.mockImplementation(async () => result);
     const vm = new ViewModel(fetcher);
     await vm.addFolder('/in');
     expect(vm.files.map(f => f.path)).toEqual(['/in/a.mp4']);
     result = [file('/in/b.mp4')]; // a.mp4 deleted, b.mp4 appeared
     await vm.rescanAll();
     expect(vm.files.map(f => f.path)).toEqual(['/in/b.mp4']);
-  });
-});
-
-describe('start payload', () => {
-  it('includes the overwrite flag', async () => {
-    const fetcher = fakeFetch([file('/in/a.mp4')]);
-    const vm = new ViewModel(fetcher);
-    await vm.addFolder('/in');
-    vm.setOutputFolder('/out');
-    vm.setOverwrite(true);
-    await vm.start();
-    const call = (fetcher as any).mock.calls.find((c: any[]) => String(c[0]).includes('enqueue'));
-    expect(JSON.parse(call[1].body).overwrite).toBe(true);
   });
 });

@@ -60,7 +60,7 @@ describe('ViewModel', () => {
     expect(vm.groupOverrides.has(key)).toBe(false);
   });
 
-  it('start enqueues the selection with file info and effective settings', async () => {
+  it('start enqueues the authoritative selection by path', async () => {
     const fetcher = fakeFetch([file('/in/a.mp4')]);
     const vm = new ViewModel(fetcher);
     await vm.addFolder('/in');
@@ -69,11 +69,7 @@ describe('ViewModel', () => {
     expect(vm.statusOf('/in/a.mp4')).toBe('enqueued');
     const call = (fetcher as any).mock.calls.find((c: any[]) => String(c[0]).includes('enqueue'));
     const body = JSON.parse(call[1].body);
-    expect(body.outputFolder).toBe('/out');
-    expect(body.maxConcurrent).toBe(1);
-    expect(body.files[0].info.path).toBe('/in/a.mp4');
-    expect(body.files[0].info.kind).toBe('video');
-    expect(body.files[0].settings.videoCodec).toBe('av1');
+    expect(body).toEqual({ paths: ['/in/a.mp4'] });
   });
 
   it('retries errors but does not restart active or finished files', async () => {
@@ -93,7 +89,7 @@ describe('ViewModel', () => {
     const call = (fetcher as any).mock.calls.find(
       (c: any[]) => String(c[0]).includes('/api/enqueue'));
     const body = JSON.parse(call[1].body);
-    expect(body.files.map((entry: any) => entry.info.path)).toEqual(['/in/error.mp4']);
+    expect(body.paths).toEqual(['/in/error.mp4']);
     expect(vm.statusOf('/in/error.mp4')).toBe('enqueued');
   });
 
@@ -134,12 +130,14 @@ describe('ViewModel', () => {
   });
 
   it('clearAll removes every scanned entry except the one processing', async () => {
-    const vm = new ViewModel(fakeFetch([
+    const fetcher = fakeFetch([
       file('/in/a.mp4'), file('/in/b.mp4'), file('/in/c.mp4'),
-    ]));
+    ]);
+    const vm = new ViewModel(fetcher);
     await vm.addFolder('/in');
     vm.applyJobUpdate({ path: '/in/a.mp4', status: 'processing', progress: 0.5 });
     vm.applyJobUpdate({ path: '/in/b.mp4', status: 'enqueued', progress: 0 });
+    fetcher.setJobs([...vm.jobs.values()]);
     await vm.clearAll();
     expect(vm.files.map(f => f.path)).toEqual(['/in/a.mp4']);
     expect(vm.statusOf('/in/a.mp4')).toBe('processing');
@@ -166,9 +164,11 @@ describe('ViewModel', () => {
   });
 
   it('clearUnqueued removes only notQueued scanned entries', async () => {
-    const vm = new ViewModel(fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]));
+    const fetcher = fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]);
+    const vm = new ViewModel(fetcher);
     await vm.addFolder('/in');
     vm.applyJobUpdate({ path: '/in/b.mp4', status: 'finished', progress: 1 });
+    fetcher.setJobs([...vm.jobs.values()]);
     await vm.clearUnqueued();
     expect(vm.files.map(f => f.path)).toEqual(['/in/b.mp4']);
   });
@@ -215,8 +215,7 @@ describe('ViewModel', () => {
     const vm = new ViewModel(fetcher);
     vm.setExtEnabled('.mp4', false);
     await vm.addFolder('/in');
-    const call = (fetcher as any).mock.calls[0];
-    const exts = JSON.parse(call[1].body).extensions;
+    const exts = fetcher.scan.mock.calls[0][3];
     expect(exts).not.toContain('.mp4');
     expect(exts).toContain('.mkv');
     expect(exts).toContain('.jpg');

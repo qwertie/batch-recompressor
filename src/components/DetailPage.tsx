@@ -218,7 +218,7 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         ▶ Start ({startableFiles.length})
       </Btn>
       {sel.kind === 'root'
-        ? <Btn onClick={() => vm.clearAll(files)} disabled={vm.rootFolders.length === 0}>
+        ? <Btn onClick={() => vm.clearAll()} disabled={vm.rootFolders.length === 0}>
             Clear all
           </Btn>
         : excludeAction}
