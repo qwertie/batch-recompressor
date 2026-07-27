@@ -28,8 +28,18 @@ const Sidebar = styled('div')`
 export const App = observer(function App(props: { vm?: ViewModel }) {
   const vm = useMemo(() => props.vm ?? new ViewModel(), [props.vm]);
   useEffect(() => {
-    if (!props.vm) void vm.loadState(); // tests pass a detached in-memory mirror
-    if (typeof EventSource !== 'undefined') vm.connectEvents();
+    let disposed = false;
+    let disconnect: (() => void) | undefined;
+    const connect = () => {
+      if (!disposed && typeof EventSource !== 'undefined')
+        disconnect = vm.connectEvents();
+    };
+    if (props.vm) connect();
+    else void vm.loadState().then(connect);
+    return () => {
+      disposed = true;
+      disconnect?.();
+    };
   }, [vm, props.vm]);
   return <Layout>
     <Sidebar><Tree vm={vm} /></Sidebar>

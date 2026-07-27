@@ -67,18 +67,37 @@ export function cloneAppState(state: AppState): AppState {
   return structuredClone(state);
 }
 
-export function effectiveSettingsFor(
-  state: AppState, file: MediaFileInfo,
-): EncodeSettings {
-  const group = groupFiles(
+export interface SettingsIndex {
+  groupKeys: Map<string, string>;
+  groupOverrides: Map<string, SettingsOverride>;
+  fileOverrides: Map<string, SettingsOverride>;
+}
+
+/** Precompute settings lookups once for rendering or enqueueing many files. */
+export function settingsIndex(state: AppState): SettingsIndex {
+  const groupKeys = new Map<string, string>();
+  for (const group of groupFiles(
     state.files.filter(f =>
       !isExcluded(f.path, state.outputFolder, state.exclusions)),
     state.grouping,
-  ).find(candidate => candidate.files.some(f => f.path === file.path));
+  )) {
+    for (const file of group.files) groupKeys.set(file.path, group.key);
+  }
+  return {
+    groupKeys,
+    groupOverrides: new Map(state.groupOverrides),
+    fileOverrides: new Map(state.fileOverrides),
+  };
+}
+
+export function effectiveSettingsFor(
+  state: AppState, file: MediaFileInfo, index = settingsIndex(state),
+): EncodeSettings {
+  const groupKey = index.groupKeys.get(file.path);
   return {
     ...state.settings,
-    ...(group ? Object.fromEntries(state.groupOverrides)[group.key] : undefined),
-    ...Object.fromEntries(state.fileOverrides)[file.path],
+    ...(groupKey ? index.groupOverrides.get(groupKey) : undefined),
+    ...index.fileOverrides.get(file.path),
   };
 }
 

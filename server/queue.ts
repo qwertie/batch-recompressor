@@ -51,7 +51,6 @@ export class EncodeQueue extends EventEmitter {
     const state: JobState = { path: key, status: 'enqueued', progress: 0 };
     this.jobs.set(key, { job, state });
     this.pending.push(key);
-    this.emit('update', state);
     this.pump();
   }
 

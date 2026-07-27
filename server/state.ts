@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   applyStateCommand, cloneAppState, effectiveSettingsFor, initialAppState, removeStateEntries,
+  settingsIndex,
   type AppState, type StateCommand, type StateSnapshot,
 } from '../shared/state.js';
 import type { EnqueueRequest } from '../shared/types.js';
@@ -62,13 +63,14 @@ export class AppStateStore {
       && !isExcluded(file.path, this.state.outputFolder, this.state.exclusions));
     if (files.length !== wanted.size)
       throw new StateConflict('One or more files being started no longer exist on the server.');
+    const index = settingsIndex(this.state);
     return {
       outputFolder: this.state.outputFolder,
       overwrite: this.state.overwrite,
       maxConcurrent: this.state.maxConcurrent,
       files: files.map(info => ({
         info: structuredClone(info),
-        settings: effectiveSettingsFor(this.state, info),
+        settings: effectiveSettingsFor(this.state, info, index),
       })),
     };
   }

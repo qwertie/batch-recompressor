@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { styled } from '../styled.js';
 import type { ViewModel } from '../viewmodel.js';
+import type { MediaFileInfo } from '../../shared/types.js';
 import { SettingsEditor } from './SettingsEditor.js';
 import { FileTypeTree } from './FileTypeTree.js';
 import {
@@ -57,6 +58,55 @@ function fmtSize(bytes: number): string {
   if (bytes >= 1 << 30) return (bytes / (1 << 30)).toFixed(2) + ' GB';
   return (bytes / (1 << 20)).toFixed(1) + ' MB';
 }
+
+const FileRow = observer(function FileRow(props: {
+  vm: ViewModel;
+  file: MediaFileInfo;
+  showExclude: boolean;
+}) {
+  const { vm, file: f, showExclude } = props;
+  const job = vm.jobs.get(f.path);
+  const status = job?.status ?? 'notQueued';
+  const eff = vm.effectiveSettings(f);
+  const statusLabel = status === 'processing'
+    ? `processing ${Math.round((job?.progress ?? 0) * 100)}%`
+    : status === 'error' ? `error: ${job?.error}` : status;
+  const outputLabel = statusLabel + (status === 'finished' && job?.outputSize
+    ? ` (${fmtSize(job.outputSize)})` : '');
+  const revealOutput = (status === 'processing' || status === 'finished')
+    && job?.outputPath;
+  const usesDensity = f.kind !== 'image'
+    && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff));
+  const targetLabel = usesDensity
+    ? `~${fmtSize(estimatedSize(f, eff))}`
+    : `quality ${eff.quality}`;
+  return <tr>
+    <td style={{ wordBreak: 'break-all' }}>
+      <TableLink title="Open file" onClick={() => vm.openFile(f.path)}>
+        {f.path}
+      </TableLink>
+    </td>
+    <td>{fmtSize(f.size)}</td>
+    <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
+    <td><Tip tip={<span>
+      <b>Target density:</b>{' '}
+      {targetDensity(f, eff).toFixed(2)} {densityUnit(f.kind)}
+      {!usesDensity && ' (not used in quality mode)'}
+    </span>}>{targetLabel}</Tip></td>
+    <StatusCell status={status}>
+      {revealOutput
+        ? <StatusLink title="Show output in file manager"
+            onClick={() => vm.revealInFileManager(job.outputPath!)}>
+            {outputLabel}
+          </StatusLink>
+        : outputLabel}
+      {status === 'processing' &&
+        <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
+    </StatusCell>
+    <td>{showExclude &&
+      <Btn title="Exclude this" onClick={() => vm.exclude(f.path)}>Exclude</Btn>}</td>
+  </tr>;
+});
 
 export const DetailPage = observer(function DetailPage(props: { vm: ViewModel }) {
   const { vm } = props;
@@ -241,51 +291,8 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         <th>Status</th><th></th>
       </tr></thead>
       <tbody>
-        {files.map(f => {
-          const job = vm.jobs.get(f.path);
-          const status = job?.status ?? 'notQueued';
-          const eff = vm.effectiveSettings(f);
-          const statusLabel = status === 'processing'
-            ? `processing ${Math.round((job?.progress ?? 0) * 100)}%`
-            : status === 'error' ? `error: ${job?.error}` : status;
-          const outputLabel = statusLabel + (status === 'finished' && job?.outputSize
-            ? ` (${fmtSize(job.outputSize)})` : '');
-          const revealOutput = (status === 'processing' || status === 'finished')
-            && job?.outputPath;
-          const usesDensity = f.kind !== 'image'
-            && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff));
-          const targetLabel = usesDensity
-            ? `~${fmtSize(estimatedSize(f, eff))}`
-            : `quality ${eff.quality}`;
-          return <tr key={f.path}>
-            <td style={{ wordBreak: 'break-all' }}>
-              <TableLink title="Open file" onClick={() => vm.openFile(f.path)}>
-                {f.path}
-              </TableLink>
-            </td>
-            <td>{fmtSize(f.size)}</td>
-            <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
-            <td><Tip tip={<span>
-              <b>Target density:</b>{' '}
-              {targetDensity(f, eff).toFixed(2)} {densityUnit(f.kind)}
-              {!usesDensity && ' (not used in quality mode)'}
-            </span>}>{targetLabel}</Tip></td>
-            <StatusCell status={status}>
-              {revealOutput
-                ? <StatusLink title="Show output in file manager"
-                    onClick={() => vm.revealInFileManager(job.outputPath!)}>
-                    {outputLabel}
-                  </StatusLink>
-                : outputLabel}
-              {status === 'processing' &&
-                <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
-            </StatusCell>
-            <td>
-              {sel.kind !== 'file' &&
-                <Btn title="Exclude this" onClick={() => vm.exclude(f.path)}>Exclude</Btn>}
-            </td>
-          </tr>;
-        })}
+        {files.map(file =>
+          <FileRow key={file.path} vm={vm} file={file} showExclude={sel.kind !== 'file'} />)}
       </tbody>
     </Table>
   </Page>;

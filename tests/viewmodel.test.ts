@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { autorun } from 'mobx';
 import { ViewModel } from '../src/viewmodel.js';
 import { file, fakeFetch } from './helpers.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
@@ -91,6 +92,28 @@ describe('ViewModel', () => {
     const body = JSON.parse(call[1].body);
     expect(body.paths).toEqual(['/in/error.mp4']);
     expect(vm.statusOf('/in/error.mp4')).toBe('enqueued');
+  });
+
+  it('does not invalidate status observers for progress-only updates', () => {
+    const vm = new ViewModel(fakeFetch());
+    vm.applyJobUpdate({
+      path: '/in/a.mp4', status: 'processing', progress: 0.1,
+    });
+    let reactions = 0;
+    const dispose = autorun(() => {
+      vm.statusOf('/in/a.mp4');
+      reactions++;
+    });
+
+    vm.applyJobUpdate({
+      path: '/in/a.mp4', status: 'processing', progress: 0.2,
+    });
+    expect(reactions).toBe(1);
+    vm.applyJobUpdate({
+      path: '/in/a.mp4', status: 'finished', progress: 1,
+    });
+    expect(reactions).toBe(2);
+    dispose();
   });
 
   it('start without an output folder sets an error', async () => {

@@ -6,8 +6,8 @@ import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { groupFiles, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
 import { isExcluded } from '../shared/paths.js';
 import {
-  applyStateCommand, effectiveSettingsFor, initialAppState,
-  type AppState, type StateCommand, type StateSnapshot,
+  applyStateCommand, effectiveSettingsFor, initialAppState, settingsIndex,
+  type AppState, type SettingsIndex, type StateCommand, type StateSnapshot,
 } from '../shared/state.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
@@ -60,6 +60,7 @@ export class ViewModel {
   get fileOverrides(): Map<string, SettingsOverride> {
     return new Map(this.state.fileOverrides);
   }
+  get settingsIndex(): SettingsIndex { return settingsIndex(this.state); }
 
   get visibleFiles(): MediaFileInfo[] {
     return this.files.filter(f => !isExcluded(f.path, this.outputFolder, this.exclusions));
@@ -79,7 +80,7 @@ export class ViewModel {
 
   /** Effective settings for a file: global <- group override <- file override. */
   effectiveSettings(file: MediaFileInfo): EncodeSettings {
-    return effectiveSettingsFor(this.state, file);
+    return effectiveSettingsFor(this.state, file, this.settingsIndex);
   }
 
   statusOf(path: string): JobStatus {
@@ -331,7 +332,24 @@ export class ViewModel {
   }
 
   applyJobUpdate(state: JobState): void {
-    this.jobs.set(state.path, state);
+    const current = this.jobs.get(state.path);
+    if (current
+      && current.status === state.status
+      && current.progress === state.progress
+      && current.error === state.error
+      && current.outputPath === state.outputPath
+      && current.outputSize === state.outputSize) return;
+    if (current) {
+      Object.assign(current, {
+        status: state.status,
+        progress: state.progress,
+        error: state.error,
+        outputPath: state.outputPath,
+        outputSize: state.outputSize,
+      });
+    } else {
+      this.jobs.set(state.path, state);
+    }
   }
 
   /** Hydrate the browser mirror from the backend without touching the filesystem. */
@@ -455,8 +473,9 @@ export class ViewModel {
   }
 
   /** Subscribe to the server's SSE job-update stream. */
-  connectEvents(): void {
+  connectEvents(): () => void {
     const es = new EventSource('/api/events');
     es.onmessage = ev => this.applyJobUpdate(JSON.parse(ev.data));
+    return () => es.close();
   }
 }
