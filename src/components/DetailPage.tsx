@@ -218,7 +218,9 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         ▶ Start ({startableFiles.length})
       </Btn>
       {sel.kind === 'root'
-        ? <Btn onClick={() => vm.clearAll(files)} disabled={files.length === 0}>Clear all</Btn>
+        ? <Btn onClick={() => vm.clearAll(files)} disabled={vm.rootFolders.length === 0}>
+            Clear all
+          </Btn>
         : excludeAction}
       <Btn onClick={() => vm.clearUnqueued(files)} disabled={!unqueued}>Clear unqueued</Btn>
       <Btn onClick={() => vm.cancelQueue(files)} disabled={!enqueued}>Cancel queue</Btn>

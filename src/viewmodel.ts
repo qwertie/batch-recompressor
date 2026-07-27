@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { groupFiles, DEFAULT_GROUPING, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
 import { ALL_EXTENSIONS } from '../shared/filetypes.js';
-import { isExcluded, normPath } from '../shared/paths.js';
+import { isExcluded, isInside, normPath } from '../shared/paths.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
 export type Selection =
@@ -292,8 +292,41 @@ export class ViewModel {
 
   /** Clear every entry except the active encode; queued work is cancelled first. */
   async clearAll(files: MediaFileInfo[] = this.selectedFiles): Promise<void> {
-    await this.cancelQueue(files);
-    await this.clearEntries(files.map(f => f.path));
+    const roots = new Set(
+      this.selection.kind === 'root'
+        ? this.rootFolders
+        : files.map(f => f.rootFolder),
+    );
+    const entries = this.files.filter(f => roots.has(f.rootFolder));
+    const paths = new Set(entries.map(f => f.path));
+    const groupKeys = this.groups
+      .filter(group => group.files.some(f => paths.has(f.path)))
+      .map(group => group.key);
+
+    await this.cancelQueue(entries);
+    await this.clearEntries(entries.map(f => f.path));
+
+    runInAction(() => {
+      const clearedRoots = [...roots].filter(root =>
+        !this.files.some(f => f.rootFolder === root));
+      if (clearedRoots.length > 0) {
+        this.rootFolders = this.rootFolders.filter(root => !clearedRoots.includes(root));
+        this.exclusions = this.exclusions.filter(exclusion =>
+          !clearedRoots.some(root => isInside(exclusion, root)));
+        for (const path of this.fileOverrides.keys()) {
+          if (clearedRoots.some(root => isInside(path, root)))
+            this.fileOverrides.delete(path);
+        }
+        for (const path of this.jobs.keys()) {
+          if (clearedRoots.some(root => isInside(path, root))) this.jobs.delete(path);
+        }
+      }
+
+      const remainingGroupKeys = new Set(this.groups.map(group => group.key));
+      for (const key of groupKeys) {
+        if (!remainingGroupKeys.has(key)) this.groupOverrides.delete(key);
+      }
+    });
   }
 
   /** Clear entries which have never been queued or were cancelled. */

@@ -145,6 +145,26 @@ describe('ViewModel', () => {
     expect(vm.statusOf('/in/a.mp4')).toBe('processing');
   });
 
+  it('clearAll forgets folder exclusions and setting overrides before it is re-added', async () => {
+    const fetcher = fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]);
+    const vm = new ViewModel(fetcher);
+    await vm.addFolder('/in');
+    const groupKey = vm.groups[0].key;
+    vm.setOverride('group', groupKey, 'compressionRatio', 9);
+    vm.setOverride('file', '/in/a.mp4', 'effort', 1);
+    vm.exclude('/in/b.mp4');
+
+    await vm.clearAll();
+    expect(vm.rootFolders).toEqual([]);
+    expect(vm.exclusions).toEqual([]);
+    expect(vm.groupOverrides.size).toBe(0);
+    expect(vm.fileOverrides.size).toBe(0);
+
+    await vm.addFolder('/in');
+    expect(vm.visibleFiles.map(f => f.path)).toEqual(['/in/a.mp4', '/in/b.mp4']);
+    expect(vm.effectiveSettings(vm.files[0])).toEqual(DEFAULT_SETTINGS);
+  });
+
   it('clearUnqueued removes only notQueued scanned entries', async () => {
     const vm = new ViewModel(fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]));
     await vm.addFolder('/in');
