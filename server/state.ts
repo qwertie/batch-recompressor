@@ -6,7 +6,8 @@ import {
   type AppState, type StateCommand, type StateSnapshot,
 } from '../shared/state.js';
 import type { EnqueueRequest } from '../shared/types.js';
-import { isExcluded } from '../shared/paths.js';
+import { isExcluded, outputPathFor } from '../shared/paths.js';
+import { outputExt } from '../shared/encode.js';
 import { scanFolder } from './scan.js';
 import type { EncodeQueue } from './queue.js';
 
@@ -49,10 +50,35 @@ export class AppStateStore {
   }
 
   snapshot(): StateSnapshot {
+    const existingOutputs = [];
+    if (this.state.outputFolder) {
+      const index = settingsIndex(this.state);
+      for (const file of this.state.files) {
+        if (isExcluded(file.path, this.state.outputFolder, this.state.exclusions)) continue;
+        try {
+          const settings = effectiveSettingsFor(this.state, file, index);
+          const outputPath = outputPathFor(
+            file.path, file.rootFolder, this.state.outputFolder,
+            outputExt(file.kind, settings),
+          );
+          const stat = fs.statSync(outputPath);
+          if (stat.isFile()) {
+            existingOutputs.push({
+              path: file.path,
+              outputPath,
+              outputSize: stat.size,
+            });
+          }
+        } catch {
+          // A missing or temporarily inaccessible destination is simply not reported.
+        }
+      }
+    }
     return {
       revision: this.revision,
       state: cloneAppState(this.state),
       jobs: structuredClone(this.queue.getStates()),
+      existingOutputs,
     };
   }
 

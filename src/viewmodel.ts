@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type {
-  MediaFileInfo, JobState, JobStatus, EncodeSettings, SettingsOverride,
+  MediaFileInfo, JobState, JobStatus, EncodeSettings, ExistingOutput, SettingsOverride,
 } from '../shared/types.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { groupFiles, type FileGroup, type GroupingOptions } from '../shared/grouping.js';
@@ -25,6 +25,8 @@ export class ViewModel {
   private state: AppState = initialAppState();
   /** Job states received from the server, keyed by file path. */
   jobs = new Map<string, JobState>();
+  /** Configured destination files which already exist, keyed by source path. */
+  existingOutputs = new Map<string, ExistingOutput>();
   selection: Selection = { kind: 'root' };
   scanning = false;
   loadingState = false;
@@ -384,6 +386,9 @@ export class ViewModel {
     this.revision = snapshot.revision;
     this.applyEditableState(snapshot.state);
     this.jobs = new Map(snapshot.jobs.map(job => [job.path, job]));
+    this.existingOutputs = new Map(
+      snapshot.existingOutputs.map(output => [output.path, output]),
+    );
   }
 
   private change(command: StateCommand): void {
@@ -446,6 +451,11 @@ export class ViewModel {
             this.applySnapshot(data as StateSnapshot);
             for (const pending of this.pending)
               applyStateCommand(this.state, pending.command);
+          } else if (data.existingOutputs) {
+            this.existingOutputs = new Map(
+              (data.existingOutputs as ExistingOutput[])
+                .map(output => [output.path, output]),
+            );
           }
           this.error = '';
         });

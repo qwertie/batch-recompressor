@@ -59,7 +59,10 @@ export function fakeFetch(scanResult: MediaFileInfo[] = []) {
         const snapshot = await store.dispatch(body.command, body.revision);
         const structural = ['addFolder', 'rescan', 'clearAll', 'clearUnqueued']
           .includes(body.command?.type);
-        return response(structural ? snapshot : { revision: snapshot.revision });
+        return response(structural ? snapshot : {
+          revision: snapshot.revision,
+          existingOutputs: snapshot.existingOutputs,
+        });
       } catch (error: any) {
         return response({ error: String(error.message ?? error) }, 409);
       }

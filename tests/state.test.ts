@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { AppStateStore, StateConflict } from '../server/state.js';
 import type { JobState } from '../shared/types.js';
+import { outputPathFor } from '../shared/paths.js';
 import { file } from './helpers.js';
 
 function fakeQueue() {
@@ -124,6 +125,36 @@ describe('AppStateStore', () => {
     expect(request.overwrite).toBe(true);
     expect(request.files[0].info.path).toBe('/media/a.mp4');
     expect(request.files[0].settings.effort).toBe(2);
+  });
+
+  it('reports destination files which already exist', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-recompressor-output-'));
+    const sourceFolder = path.join(directory, 'source');
+    const outputFolder = path.join(directory, 'output');
+    const sourcePath = path.join(sourceFolder, 'nested', 'a.mp4');
+    const outputPath = outputPathFor(sourcePath, sourceFolder, outputFolder);
+    try {
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.writeFile(outputPath, Buffer.alloc(2 << 20));
+      const store = new AppStateStore(fakeQueue(), {
+        scan: async () => [file(sourcePath, 2000, { rootFolder: sourceFolder })],
+        isFolder: () => true,
+      });
+      let snapshot = await store.dispatch(
+        { type: 'addFolder', folder: sourceFolder }, 0,
+      );
+      snapshot = await store.dispatch({
+        type: 'update', values: { outputFolder },
+      }, snapshot.revision);
+
+      expect(snapshot.existingOutputs).toEqual([{
+        path: sourcePath,
+        outputPath,
+        outputSize: 2 << 20,
+      }]);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('clearAll forgets the complete folder state on the server', async () => {

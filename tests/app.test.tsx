@@ -145,4 +145,26 @@ describe('App', () => {
         (c: any[]) => String(c[0]).includes('/api/reveal'))).toBe(true);
     });
   });
+
+  it('links existing outputs for not-queued and queued files', async () => {
+    const fetcher = fakeFetch([file('/in/a.mp4'), file('/in/b.mp4')]);
+    const vm = new ViewModel(fetcher);
+    await vm.addFolder('/in');
+    vm.existingOutputs.set('/in/a.mp4', {
+      path: '/in/a.mp4', outputPath: 'C:\\out\\a.mkv', outputSize: 2 << 20,
+    });
+    vm.existingOutputs.set('/in/b.mp4', {
+      path: '/in/b.mp4', outputPath: 'C:\\out\\b.mkv', outputSize: 3 << 20,
+    });
+    vm.applyJobUpdate({ path: '/in/b.mp4', status: 'enqueued', progress: 0 });
+    render(<App vm={vm} />);
+
+    expect(screen.getByText('Exists (2.0 MB)')).toBeTruthy();
+    expect(screen.getByText('Exists (3.0 MB)')).toBeTruthy();
+    const links = screen.getAllByTitle('Show existing output in file manager');
+    fireEvent.click(links[0]);
+    fireEvent.click(links[1]);
+    await waitFor(() => expect((fetcher as any).mock.calls.filter(
+      (c: any[]) => String(c[0]).includes('/api/reveal'))).toHaveLength(2));
+  });
 });

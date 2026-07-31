@@ -1,4 +1,6 @@
-import type { EncodeSettings, JobState, MediaFileInfo, SettingsOverride } from './types.js';
+import type {
+  EncodeSettings, ExistingOutput, JobState, MediaFileInfo, SettingsOverride,
+} from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 import type { GroupingOptions } from './grouping.js';
 import { DEFAULT_GROUPING, groupFiles } from './grouping.js';
@@ -24,6 +26,7 @@ export interface StateSnapshot {
   revision: number;
   state: AppState;
   jobs: JobState[];
+  existingOutputs: ExistingOutput[];
 }
 
 type StateValues = Pick<AppState,

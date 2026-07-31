@@ -42,6 +42,13 @@ export interface JobState {
   outputSize?: number;
 }
 
+export interface ExistingOutput {
+  /** Source file whose configured destination already exists. */
+  path: string;
+  outputPath: string;
+  outputSize: number;
+}
+
 export type RateMode = 'bitrate' | 'quality';
 
 export interface EncodeSettings {

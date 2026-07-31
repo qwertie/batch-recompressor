@@ -29,7 +29,10 @@ app.post('/api/state', async (req, res) => {
       .includes(req.body?.command?.type);
     res.json(structural
       ? snapshot
-      : { revision: snapshot.revision });
+      : {
+        revision: snapshot.revision,
+        existingOutputs: snapshot.existingOutputs,
+      });
   } catch (err: any) {
     res.status(err instanceof StateConflict ? 409 : 400).json({
       error: String(err.message ?? err),

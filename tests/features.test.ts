@@ -20,7 +20,7 @@ describe('server state hydration', () => {
     state.fileOverrides = [['/in/a.mp4', { effort: 9 }]];
     const fetcher = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ revision: 7, state, jobs: [] }),
+      json: async () => ({ revision: 7, state, jobs: [], existingOutputs: [] }),
     })) as unknown as typeof fetch;
     const vm = new ViewModel(fetcher);
 
@@ -56,6 +56,7 @@ describe('server state hydration', () => {
             revision: gets === 1 ? 2 : 3,
             state: gets === 1 ? initial : authoritative,
             jobs: [],
+            existingOutputs: [],
           }),
         };
       }
@@ -84,7 +85,7 @@ describe('server state hydration', () => {
     const fetcher = vi.fn(async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ revision: 1, state, jobs: [] }),
+      json: async () => ({ revision: 1, state, jobs: [], existingOutputs: [] }),
     })) as unknown as typeof fetch;
     const vm = new ViewModel(fetcher);
     await vm.loadState();
@@ -108,7 +109,7 @@ describe('server state hydration', () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (!init?.method) return {
         ok: true, status: 200,
-        json: async () => ({ revision: 1, state, jobs: [] }),
+        json: async () => ({ revision: 1, state, jobs: [], existingOutputs: [] }),
       };
       if (String(url) === '/api/state') {
         calls.push('save');

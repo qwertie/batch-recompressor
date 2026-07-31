@@ -75,6 +75,8 @@ const FileRow = observer(function FileRow(props: {
     ? ` (${fmtSize(job.outputSize)})` : '');
   const revealOutput = (status === 'processing' || status === 'finished')
     && job?.outputPath;
+  const existingOutput = (status === 'notQueued' || status === 'enqueued')
+    ? vm.existingOutputs.get(f.path) : undefined;
   const usesDensity = f.kind !== 'image'
     && (eff.rateMode === 'bitrate' || !supportsQualityMode(f.kind, eff));
   const targetLabel = usesDensity
@@ -100,6 +102,13 @@ const FileRow = observer(function FileRow(props: {
             {outputLabel}
           </StatusLink>
         : outputLabel}
+      {existingOutput && <>
+        {' '}
+        <StatusLink title="Show existing output in file manager"
+          onClick={() => vm.revealInFileManager(existingOutput.outputPath)}>
+          Exists ({fmtSize(existingOutput.outputSize)})
+        </StatusLink>
+      </>}
       {status === 'processing' &&
         <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
     </StatusCell>
