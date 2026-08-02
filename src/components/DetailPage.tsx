@@ -6,8 +6,10 @@ import type { MediaFileInfo } from '../../shared/types.js';
 import { SettingsEditor } from './SettingsEditor.js';
 import { FileTypeTree } from './FileTypeTree.js';
 import {
-  density, densityUnit, estimatedSize, supportsQualityMode, targetDensity,
+  density, densityUnit, estimatedSize, outputExt, plannedFfmpegCommand,
+  supportsQualityMode, targetDensity,
 } from '../../shared/encode.js';
+import { outputPathFor } from '../../shared/paths.js';
 import { Tip, DensityTip } from './Tip.js';
 
 const Page = styled('div')`flex: 1; padding: 12px 16px; overflow: auto;`;
@@ -43,6 +45,13 @@ const StatusCell = styled('td')<{ status: string }>`
     notQueued: '#888', enqueued: '#c9a227', processing: '#4da3ff',
     finished: '#5dbb63', error: '#e05555',
   } as Record<string, string>)[p.status]};
+`;
+const CopyCommandButton = styled('button')`
+  margin-left: 6px; padding: 1px 3px; border: 0; border-radius: 3px;
+  background: transparent; color: #999; cursor: pointer; vertical-align: middle;
+  &:hover:not(:disabled) { background: #333; color: #dcecff; }
+  &:disabled { opacity: .35; cursor: default; }
+  & svg { display: block; width: 14px; height: 14px; }
 `;
 const ExcludeList = styled('ul')`
   margin: 4px 0; padding-left: 20px;
@@ -82,6 +91,24 @@ const FileRow = observer(function FileRow(props: {
   const targetLabel = usesDensity
     ? `~${fmtSize(estimatedSize(f, eff))}`
     : `quality ${eff.quality}`;
+  const plannedCommand = vm.outputFolder
+    ? plannedFfmpegCommand(f, outputPathFor(
+      f.path, f.rootFolder, vm.outputFolder, outputExt(f.kind, eff)), eff)
+    : '';
+  const plannedCommandLines = plannedCommand.split('\n');
+  const copyCommand = () => {
+    if (!plannedCommand || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(plannedCommand).catch(() => {});
+  };
+  const copyButton = <CopyCommandButton
+    type="button"
+    disabled={!plannedCommand}
+    aria-label={`Copy planned FFmpeg command for ${f.path}`}
+    onClick={copyCommand}>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path fill="currentColor" d="M5 1h8a2 2 0 0 1 2 2v8h-2V3H5V1Zm-2 4h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 2v7h7V7H3Z" />
+    </svg>
+  </CopyCommandButton>;
   return <tr>
     <td style={{ wordBreak: 'break-all' }}>
       <TableLink title="Open file" onClick={() => vm.openFile(f.path)}>
@@ -89,7 +116,20 @@ const FileRow = observer(function FileRow(props: {
       </TableLink>
     </td>
     <td>{fmtSize(f.size)}</td>
-    <td>{density(f).toFixed(2)} {densityUnit(f.kind)}</td>
+    <td>
+      {plannedCommand
+        ? <Tip tip={<span>
+            <b>Planned FFmpeg command</b>
+            {plannedCommandLines.map((line, index) =>
+              <code key={index} style={{ display: 'block', wordBreak: 'break-all' }}>
+                {line}
+              </code>)}
+          </span>}>
+            {density(f).toFixed(2)} {densityUnit(f.kind)}
+          </Tip>
+        : <>{density(f).toFixed(2)} {densityUnit(f.kind)}</>}
+      {copyButton}
+    </td>
     <td><Tip tip={<span>
       <b>Target density:</b>{' '}
       {targetDensity(f, eff).toFixed(2)} {densityUnit(f.kind)}

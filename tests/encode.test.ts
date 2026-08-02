@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   targetBps, targetDensity, ffmpegArgs, effortToPreset, outputExt, supportsQualityMode,
   estimatedSize, outputDimensions, outputAudioSampleRate, recompressesVideoAudio,
-  rotationMetadataArgs,
+  plannedFfmpegCommand, rotationMetadataArgs,
 } from '../shared/encode.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { file, image, audio } from './helpers.js';
@@ -145,5 +145,29 @@ describe('ffmpegArgs', () => {
     const s = { ...DEFAULT_SETTINGS, rateMode: 'quality' as const, audioCodec: 'mp3' as const };
     const args = ffmpegArgs(audio('/in/a.wav'), '/out/a.mp3', s);
     expect(args[args.indexOf('-q:a') + 1]).toBe('2'); // 9*(1-0.75) ≈ 2
+  });
+});
+
+describe('plannedFfmpegCommand', () => {
+  it('formats a copyable command and quotes paths containing spaces', () => {
+    const command = plannedFfmpegCommand(
+      file('C:\\Input Files\\a.mp4'), 'C:/Output Files/a.mkv', DEFAULT_SETTINGS);
+    expect(command).toContain('ffmpeg -y -autorotate -i "C:\\Input Files\\a.mp4"');
+    expect(command).toContain('"C:/Output Files/a.mkv"');
+    expect(command.split('\n')).toHaveLength(1);
+  });
+
+  it('includes the metadata remux as a second command when required', () => {
+    const f = file('/in/portrait.mp4', 2000, {
+      width: 1080, height: 1920,
+      codedWidth: 1920, codedHeight: 1080, rotation: 90,
+    });
+    const command = plannedFfmpegCommand(
+      f, '/out/portrait.mkv', { ...DEFAULT_SETTINGS, bakeRotation: false });
+    const lines = command.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('/out/portrait.unrotated.mkv');
+    expect(lines[1]).toContain('-display_rotation:v:0 90');
+    expect(lines[1]).toContain('/out/portrait.mkv');
   });
 });

@@ -180,8 +180,28 @@ export class ViewModel {
 
   /** Exclude a file or folder path; removes it from the tree. */
   exclude(path: string): void {
+    const previous = this.selection;
+    const previousGroupPaths = previous.kind === 'group'
+      ? new Set(this.groupByKey(previous.key)?.files.map(file => file.path) ?? [])
+      : undefined;
     this.change({ type: 'exclude', paths: [path] });
-    this.selection = { kind: 'root' };
+
+    if (previous.kind === 'file') {
+      if (!this.visibleFiles.some(file => file.path === previous.path))
+        this.selection = { kind: 'root' };
+      return;
+    }
+    if (previous.kind !== 'group') return;
+
+    const successor = this.groups
+      .map(group => ({
+        group,
+        overlap: group.files.filter(file => previousGroupPaths?.has(file.path)).length,
+      }))
+      .sort((a, b) => b.overlap - a.overlap)[0];
+    this.selection = successor?.overlap
+      ? { kind: 'group', key: successor.group.key }
+      : { kind: 'root' };
   }
 
   /** Exclude every file currently in a group. */

@@ -208,3 +208,30 @@ export function rotationMetadataArgs(
     '-map', '0', '-c', 'copy', '-progress', 'pipe:1', '-nostats', output,
   ];
 }
+
+function commandArgument(arg: string): string {
+  return /^[A-Za-z0-9_./:\\=+,-]+$/.test(arg)
+    ? arg
+    : `"${arg.replaceAll('"', '\\"')}"`;
+}
+
+function unrotatedOutputPath(output: string): string {
+  const slash = Math.max(output.lastIndexOf('/'), output.lastIndexOf('\\'));
+  const dot = output.lastIndexOf('.');
+  const split = dot > slash ? dot : output.length;
+  return `${output.slice(0, split)}.unrotated${output.slice(split)}`;
+}
+
+/** Copyable command line(s) matching the selected file's effective encode settings. */
+export function plannedFfmpegCommand(
+  f: MediaFileInfo, output: string, s: EncodeSettings,
+): string {
+  const needsRotationRemux = f.kind === 'video' && !s.bakeRotation && Boolean(f.rotation);
+  const intermediate = needsRotationRemux ? unrotatedOutputPath(output) : output;
+  const commands = [ffmpegArgs(f, intermediate, s)];
+  if (needsRotationRemux)
+    commands.push(rotationMetadataArgs(f, intermediate, output));
+  return commands
+    .map(args => ['ffmpeg', ...args].map(commandArgument).join(' '))
+    .join('\n');
+}

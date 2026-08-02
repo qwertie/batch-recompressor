@@ -56,11 +56,16 @@ const statusIcon: Record<string, string> = {
 };
 
 const Expandable = observer(function Expandable(props: {
-  label: React.ReactNode; selected?: boolean; onClick?: () => void; children?: React.ReactNode;
+  label: React.ReactNode;
+  selected?: boolean;
+  onClick?: () => void;
+  children?: React.ReactNode;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(props.defaultOpen ?? true);
   return <div>
-    <NodeRow selected={props.selected} onClick={props.onClick}>
+    <NodeRow selected={props.selected} onClick={props.onClick}
+      aria-expanded={props.children ? open : undefined}>
       <Toggle onClick={e => { e.stopPropagation(); setOpen(!open); }}>
         {props.children ? (open ? '▾' : '▸') : ''}
       </Toggle>
@@ -117,7 +122,7 @@ export const Tree = observer(function Tree(props: { vm: ViewModel }) {
           if (!list) byRoot.set(f.rootFolder, (list = []));
           list.push(f);
         }
-        return <Expandable key={g.key} label={g.label}
+        return <Expandable key={g.key} label={g.label} defaultOpen={false}
           selected={isSel({ kind: 'group', key: g.key })}
           onClick={() => vm.select({ kind: 'group', key: g.key })}>
           {vm.showDirectoryTree

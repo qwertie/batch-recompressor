@@ -23,6 +23,24 @@ describe('ViewModel', () => {
     expect(vm.visibleFiles).toHaveLength(2);
   });
 
+  it('keeps a non-empty group selected after excluding its lowest-density member', async () => {
+    const vm = new ViewModel(fakeFetch([
+      file('/in/a.mp4', 2000), file('/in/b.mp4', 2400), file('/in/c.mp4', 9000),
+    ]));
+    await vm.addFolder('/in');
+    const group = vm.groups.find(candidate => candidate.files.length === 2)!;
+    vm.select({ kind: 'group', key: group.key });
+
+    vm.exclude('/in/a.mp4');
+
+    expect(vm.selection.kind).toBe('group');
+    expect(vm.selection).not.toEqual({ kind: 'group', key: group.key });
+    expect(vm.selectedFiles.map(file => file.path)).toEqual(['/in/b.mp4']);
+
+    vm.exclude('/in/b.mp4');
+    expect(vm.selection).toEqual({ kind: 'root' });
+  });
+
   it('files inside the output folder are implicitly excluded', async () => {
     const vm = new ViewModel(fakeFetch([file('/in/a.mp4'), file('/in/out/b.mp4')]));
     await vm.addFolder('/in');

@@ -1,6 +1,6 @@
 // Basic UI smoke tests (no end-to-end): render the app with a fake fetch,
 // add a folder, and check that the tree and detail page respond.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../src/App.js';
 import { ViewModel } from '../src/viewmodel.js';
@@ -41,10 +41,33 @@ describe('App', () => {
       target: { value: '/in' },
     });
     fireEvent.click(screen.getByText('Add folder'));
-    await waitFor(() =>
-      expect(screen.getByText('1920x1080 ~30fps ~0.96 b/s/px (1)')).toBeTruthy());
+    const group = await screen.findByText('1920x1080 ~30fps ~0.96 b/s/px (1)');
+    expect(group.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getAllByText('/in/sub/a.mp4').length).toBeGreaterThan(0);
     expect(screen.getByText(/0\.32 b\/s\/px/)).toBeTruthy();
+  });
+
+  it('copies the planned FFmpeg command from the density cell', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const vm = makeVM([file('/in/a.mp4', 2000)]);
+    await vm.addFolder('/in');
+    vm.setOutputFolder('/out');
+    render(<App vm={vm} />);
+
+    const copyButton = screen.getByRole('button', {
+      name: 'Copy planned FFmpeg command for /in/a.mp4',
+    });
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(screen.getByText('Planned FFmpeg command')).toBeTruthy();
+    expect(copyButton.closest('[tabindex="0"]')).toBeNull();
+    expect(screen.getByText('0.96 b/s/px').parentElement?.getAttribute('tabindex')).toBe('0');
+    expect(writeText.mock.calls[0][0]).toContain('ffmpeg -y -autorotate -i /in/a.mp4');
+    expect(writeText.mock.calls[0][0]).toContain('/out/a.mkv');
   });
 
   it('shows compact root-relative paths directly below groups in flat mode', async () => {
@@ -54,6 +77,8 @@ describe('App', () => {
     render(<App vm={vm} />);
     await vm.addFolder('C:\\A\\LongFolderName');
     fireEvent.click(screen.getByLabelText('Show directory tree'));
+    const group = await screen.findByText('1920x1080 ~30fps ~0.96 b/s/px (1)');
+    fireEvent.click(group.querySelector('span')!);
     await waitFor(() =>
       expect(screen.getByText(/LongFolderN\.\.\.\\C\\D\.mp4/)).toBeTruthy());
     expect(screen.queryByText(/📂 C:\\A\\LongFolderName/)).toBeNull();
