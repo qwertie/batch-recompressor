@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { EncodeSettings, JobState, MediaFileInfo } from '../shared/types.js';
 import { outputPathFor } from '../shared/paths.js';
-import { ffmpegArgs, outputExt } from '../shared/encode.js';
+import { ffmpegArgs, outputExt, rotationMetadataArgs } from '../shared/encode.js';
 
 export interface Job {
   info: MediaFileInfo;
@@ -93,6 +93,7 @@ export class EncodeQueue extends EventEmitter {
     const f = job.info;
     let outputStarted = false;
     let incompletePath: string | undefined;
+    let rotationSourcePath: string | undefined;
     state.status = 'processing';
     state.progress = 0;
     this.emit('update', state);
@@ -118,8 +119,12 @@ export class EncodeQueue extends EventEmitter {
       if (this.cancelRequests.has(f.path)) throw new Error('cancelled');
       incompletePath = path.join(path.dirname(outPath), `incomplete.${path.basename(outPath)}`);
       state.outputPath = incompletePath;
-      const args = ffmpegArgs(f, incompletePath, job.settings);
-      await new Promise<void>((resolve, reject) => {
+      const preserveRotation = f.kind === 'video'
+        && !job.settings.bakeRotation && Boolean(f.rotation);
+      rotationSourcePath = preserveRotation
+        ? path.join(path.dirname(outPath), `unrotated.incomplete.${path.basename(outPath)}`)
+        : undefined;
+      const runFfmpeg = (args: string[], reportProgress: boolean) => new Promise<void>((resolve, reject) => {
         const proc = this.spawnProcess('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
         outputStarted = true;
         this.current.set(f.path, proc);
@@ -128,6 +133,7 @@ export class EncodeQueue extends EventEmitter {
           stderrTail = (stderrTail + d.toString()).slice(-2000);
         });
         proc.stdout!.on('data', (d: Buffer) => {
+          if (!reportProgress) return;
           // -progress pipe:1 emits key=value lines including out_time_us
           const m = /out_time_us=(\d+)/.exec(d.toString());
           if (m && f.duration > 0) {
@@ -142,6 +148,14 @@ export class EncodeQueue extends EventEmitter {
           else reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail.split('\n').slice(-4).join(' ')}`));
         });
       });
+      await runFfmpeg(ffmpegArgs(
+        f, rotationSourcePath ?? incompletePath, job.settings), true);
+      if (rotationSourcePath) {
+        if (this.cancelRequests.has(f.path)) throw new Error('cancelled');
+        await runFfmpeg(rotationMetadataArgs(f, rotationSourcePath, incompletePath), false);
+        await fs.rm(rotationSourcePath, { force: true });
+        rotationSourcePath = undefined;
+      }
       if (job.overwrite) await fs.rm(outPath, { force: true });
       await fs.rename(incompletePath, outPath);
       state.outputPath = outPath;
@@ -152,11 +166,17 @@ export class EncodeQueue extends EventEmitter {
       if (err.message === 'cancelled') {
         state.status = 'notQueued';
         state.progress = 0;
-        if (outputStarted && incompletePath && this.cancelRequests.get(f.path) !== false)
-          await fs.rm(incompletePath, { force: true }).catch(() => {});
+        if (outputStarted && this.cancelRequests.get(f.path) !== false) {
+          if (incompletePath) await fs.rm(incompletePath, { force: true }).catch(() => {});
+          if (rotationSourcePath)
+            await fs.rm(rotationSourcePath, { force: true }).catch(() => {});
+        } else if (rotationSourcePath) {
+          state.outputPath = rotationSourcePath;
+        }
       } else {
         state.status = 'error';
         state.error = String(err.message ?? err);
+        if (rotationSourcePath) state.outputPath = rotationSourcePath;
       }
     }
     this.cancelRequests.delete(f.path);

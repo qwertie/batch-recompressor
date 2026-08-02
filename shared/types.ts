@@ -8,9 +8,14 @@ export interface MediaFileInfo {
   /** The root folder (as added via "Add folder") this file was found under. */
   rootFolder: string;
   kind: MediaKind;
-  /** Video/image dimensions; 0 for audio. */
+  /** Display-oriented video/image dimensions; 0 for audio. */
   width: number;
   height: number;
+  /** Encoded frame dimensions before applying video rotation metadata. */
+  codedWidth: number;
+  codedHeight: number;
+  /** Clockwise display rotation in degrees, normalized to 0..359. */
+  rotation: number;
   /** Frames per second, rounded to 3 decimals; 0 for image/audio. */
   fps: number;
   /** Audio-stream sample rate and channels; 0 when there is no audio stream. */
@@ -75,6 +80,8 @@ export interface EncodeSettings {
   maxHeight: number;
   /** Maximum output audio sample rate in Hz; 0 means unlimited. */
   maxSampleRate: number;
+  /** Physically rotate video frames and omit orientation metadata. */
+  bakeRotation: boolean;
 }
 
 /** Per-group / per-file overrides: any subset of EncodeSettings. */
@@ -93,6 +100,7 @@ export const DEFAULT_SETTINGS: EncodeSettings = {
   maxWidth: 0,
   maxHeight: 0,
   maxSampleRate: 0,
+  bakeRotation: true,
 };
 
 export interface EnqueueRequest {

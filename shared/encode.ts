@@ -32,6 +32,24 @@ export function outputDimensions(
   };
 }
 
+function isQuarterTurn(f: MediaFileInfo): boolean {
+  return f.rotation === 90 || f.rotation === 270;
+}
+
+/** Encoded frame dimensions before display rotation is applied. */
+export function codedDimensions(f: MediaFileInfo): { width: number; height: number } {
+  return { width: f.codedWidth, height: f.codedHeight };
+}
+
+function filterDimensions(
+  f: MediaFileInfo, s: EncodeSettings,
+): { width: number; height: number } {
+  const display = outputDimensions(f, s);
+  return !s.bakeRotation && isQuarterTurn(f)
+    ? { width: display.height, height: display.width }
+    : display;
+}
+
 const AUDIO_SAMPLE_RATES: Record<EncodeSettings['audioCodec'], number[]> = {
   opus: [48000, 24000, 16000, 12000, 8000],
   aac: [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000],
@@ -121,7 +139,9 @@ export function supportsQualityMode(kind: MediaKind, s: EncodeSettings): boolean
 
 /** Build the ffmpeg argument list (excluding the ffmpeg binary itself). */
 export function ffmpegArgs(f: MediaFileInfo, output: string, s: EncodeSettings): string[] {
-  const args = ['-y', '-i', f.path];
+  const args = ['-y'];
+  if (f.kind === 'video') args.push(s.bakeRotation ? '-autorotate' : '-noautorotate');
+  args.push('-i', f.path);
   const q = Math.min(100, Math.max(0, s.quality));
   const useQuality = f.kind === 'image'
     || (s.rateMode === 'quality' && supportsQualityMode(f.kind, s));
@@ -136,8 +156,9 @@ export function ffmpegArgs(f: MediaFileInfo, output: string, s: EncodeSettings):
     } else {
       args.push('-b:v', `${Math.round(targetBps(f, s) / 1000)}k`);
     }
-    const dims = outputDimensions(f, s);
-    if (dims.width !== f.width || dims.height !== f.height)
+    const dims = filterDimensions(f, s);
+    const source = s.bakeRotation ? { width: f.width, height: f.height } : codedDimensions(f);
+    if (dims.width !== source.width || dims.height !== source.height)
       args.push('-vf', `scale=${dims.width}:${dims.height}`);
     if (recompressesVideoAudio(f, s)) {
       const acodec = { opus: 'libopus', aac: 'aac', mp3: 'libmp3lame' }[s.audioCodec];
@@ -176,4 +197,14 @@ export function ffmpegArgs(f: MediaFileInfo, output: string, s: EncodeSettings):
   }
   args.push('-progress', 'pipe:1', '-nostats', output);
   return args;
+}
+
+/** Remux a rotated video after encoding so its display matrix remains metadata-driven. */
+export function rotationMetadataArgs(
+  f: MediaFileInfo, input: string, output: string,
+): string[] {
+  return [
+    '-y', '-display_rotation:v:0', String(f.rotation), '-i', input,
+    '-map', '0', '-c', 'copy', '-progress', 'pipe:1', '-nostats', output,
+  ];
 }

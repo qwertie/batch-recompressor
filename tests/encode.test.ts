@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   targetBps, targetDensity, ffmpegArgs, effortToPreset, outputExt, supportsQualityMode,
   estimatedSize, outputDimensions, outputAudioSampleRate, recompressesVideoAudio,
+  rotationMetadataArgs,
 } from '../shared/encode.js';
 import { DEFAULT_SETTINGS } from '../shared/types.js';
 import { file, image, audio } from './helpers.js';
@@ -96,6 +97,29 @@ describe('ffmpegArgs', () => {
     const imageArgs = ffmpegArgs(
       image('/in/a.jpg', 1e6, 4000, 3000), '/out/a.webp', s);
     expect(imageArgs[imageArgs.indexOf('-vf') + 1]).toBe('scale=960:720');
+  });
+  it('bakes display rotation by default and sizes in display orientation', () => {
+    const f = file('/in/portrait.mp4', 4000, {
+      width: 1080, height: 1920,
+      codedWidth: 1920, codedHeight: 1080, rotation: 90,
+    });
+    const s = { ...DEFAULT_SETTINGS, maxWidth: 720 };
+    const args = ffmpegArgs(f, '/out/portrait.mkv', s);
+    expect(args.slice(0, 4)).toEqual(['-y', '-autorotate', '-i', f.path]);
+    expect(outputDimensions(f, s)).toEqual({ width: 720, height: 1280 });
+    expect(args[args.indexOf('-vf') + 1]).toBe('scale=720:1280');
+  });
+  it('can keep rotation metadata while scaling the unrotated encoded frames', () => {
+    const f = file('/in/portrait.mp4', 4000, {
+      width: 1080, height: 1920,
+      codedWidth: 1920, codedHeight: 1080, rotation: 90,
+    });
+    const s = { ...DEFAULT_SETTINGS, bakeRotation: false, maxWidth: 720 };
+    const args = ffmpegArgs(f, '/out/unrotated.mkv', s);
+    expect(args.slice(0, 4)).toEqual(['-y', '-noautorotate', '-i', f.path]);
+    expect(args[args.indexOf('-vf') + 1]).toBe('scale=1280:720');
+    expect(rotationMetadataArgs(f, '/out/unrotated.mkv', '/out/final.mkv'))
+      .toContain('90');
   });
   it('uses CRF for video in quality mode', () => {
     const s = { ...DEFAULT_SETTINGS, rateMode: 'quality' as const, quality: 75 };

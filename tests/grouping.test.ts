@@ -38,6 +38,14 @@ describe('groupFiles', () => {
     expect(groupFiles(files)).toHaveLength(2);
   });
 
+  it('groups rotated video by its display-oriented resolution', () => {
+    const rotated = file('/portrait.mp4', 2000, {
+      width: 2160, height: 3840,
+      codedWidth: 3840, codedHeight: 2160, rotation: 90,
+    });
+    expect(groupFiles([rotated])[0].label).toContain('2160x3840');
+  });
+
   it('can ignore resolution and framerate, grouping purely by density', () => {
     // Same density (b/s/px) at different resolutions
     const files = [file('/a.mp4', 2000),

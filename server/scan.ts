@@ -8,6 +8,27 @@ import { ALL_EXTENSIONS } from '../shared/filetypes.js';
 
 const execFileP = promisify(execFile);
 
+/** Extract and normalize ffprobe's display-matrix or legacy rotate-tag value. */
+export function streamRotation(stream: any): number {
+  const sideData = stream?.side_data_list?.find((item: any) =>
+    Number.isFinite(Number(item?.rotation)));
+  const value = Number(sideData?.rotation ?? stream?.tags?.rotate ?? 0);
+  if (!Number.isFinite(value)) return 0;
+  return ((Math.round(value) % 360) + 360) % 360;
+}
+
+function swapsDimensions(rotation: number): boolean {
+  return rotation === 90 || rotation === 270;
+}
+
+export function displayDimensions(
+  codedWidth: number, codedHeight: number, rotation: number,
+): { width: number; height: number } {
+  return swapsDimensions(rotation)
+    ? { width: codedHeight, height: codedWidth }
+    : { width: codedWidth, height: codedHeight };
+}
+
 /** Recursively list media files under `folder`, filtered by extension. */
 export async function findMediaFiles(
   folder: string, outputFolder: string, exclusions: string[],
@@ -72,12 +93,19 @@ export async function probeFile(filePath: string, rootFolder: string): Promise<M
       const [num, den] = String(v.avg_frame_rate ?? v.r_frame_rate ?? '30/1').split('/').map(Number);
       fps = den ? num / den : num || 30;
     }
+    const codedWidth = Number(v?.width ?? 0);
+    const codedHeight = Number(v?.height ?? 0);
+    const rotation = kind === 'video' ? streamRotation(v) : 0;
+    const { width, height } = displayDimensions(codedWidth, codedHeight, rotation);
     return {
       path: filePath,
       rootFolder,
       kind,
-      width: v?.width ?? 0,
-      height: v?.height ?? 0,
+      width,
+      height,
+      codedWidth,
+      codedHeight,
+      rotation,
       fps: Math.round(fps * 1000) / 1000,
       sampleRate: Number(a?.sample_rate ?? 0),
       channels: Number(a?.channels ?? 0),

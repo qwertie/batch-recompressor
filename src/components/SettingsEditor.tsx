@@ -40,6 +40,13 @@ const TIPS: Partial<Record<keyof EncodeSettings, React.ReactNode>> = {
     sample rate supported by the selected audio codec without exceeding the
     limit.
   </span>,
+  bakeRotation: <span>
+    Videos with orientation metadata are listed and grouped by the dimensions
+    they display at. <b>Bake into pixels</b> physically rotates the frames and
+    removes the need for orientation metadata. <b>Keep as metadata</b> leaves
+    the encoded frames in their original orientation and adds the display
+    rotation back to the output.
+  </span>,
   rateMode: <span>
     <b>Prefer target rate</b>: encode to the bitrate implied by ratio and
     density limits — predictable sizes (e.g. ratio 4 → ~4× smaller), variable
@@ -101,7 +108,7 @@ const CODEC_FIELDS: { key: keyof EncodeSettings; label: string; options: [string
 export const SettingsEditor = observer(function SettingsEditor(props: {
   base: EncodeSettings;
   override?: SettingsOverride;
-  onChange: (field: keyof EncodeSettings, value: number | string | undefined) => void;
+  onChange: (field: keyof EncodeSettings, value: number | string | boolean | undefined) => void;
 }) {
   const { base, override, onChange } = props;
   const isOverride = override !== undefined;
@@ -154,6 +161,20 @@ export const SettingsEditor = observer(function SettingsEditor(props: {
         </select>
       </Row>;
     })}
+    <Row>
+      <span><Tip tip={TIPS.bakeRotation}>Video rotation</Tip></span>
+      <select
+        value={val('bakeRotation') === undefined && isOverride
+          ? '' : String(eff('bakeRotation'))}
+        onChange={e => onChange('bakeRotation', e.target.value === ''
+          ? undefined : e.target.value === 'true')}>
+        {isOverride && <option value="">
+          {base.bakeRotation ? 'Bake into pixels' : 'Keep as metadata'} (inherited)
+        </option>}
+        <option value="true">Bake into pixels</option>
+        <option value="false">Keep as metadata</option>
+      </select>
+    </Row>
     <Row>
       <span><Tip tip={TIPS.effort}>Effort (0 fast – 10 best)</Tip></span>
       <input type="range" min={0} max={10} step={1} value={eff('effort') as number}

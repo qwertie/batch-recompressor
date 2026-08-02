@@ -33,6 +33,41 @@ afterEach(async () => {
 });
 
 describe('EncodeQueue concurrency', () => {
+  it('remuxes a metadata-oriented output after encoding unrotated frames', async () => {
+    const children: FakeProcess[] = [];
+    const spawnProcess = vi.fn((_command: string, args: string[]) => {
+      const child = new FakeProcess(args[args.indexOf('-i') + 1], args.at(-1)!);
+      children.push(child);
+      return child as unknown as ChildProcess;
+    });
+    const outputFolder = await mkdtemp(path.join(tmpdir(), 'batch-recompressor-'));
+    temporaryFolders.push(outputFolder);
+    const queue = new EncodeQueue(spawnProcess);
+    queue.enqueue({
+      info: file('/in/portrait.mp4', 2000, {
+        width: 1080, height: 1920,
+        codedWidth: 1920, codedHeight: 1080, rotation: 90,
+      }),
+      outputFolder,
+      settings: { ...DEFAULT_SETTINGS, bakeRotation: false },
+    });
+
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledOnce());
+    expect(path.basename(children[0].outputPath)).toBe('unrotated.incomplete.portrait.mkv');
+    children[0].emit('close', 0, null);
+
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2));
+    const remuxArgs = spawnProcess.mock.calls[1][1];
+    expect(remuxArgs).toContain('-display_rotation:v:0');
+    expect(remuxArgs).toContain('90');
+    expect(children[1].inputPath).toBe(children[0].outputPath);
+    children[1].emit('close', 0, null);
+
+    await vi.waitFor(() => expect(queue.getStates()[0].status).toBe('finished'));
+    expect(existsSync(children[0].outputPath)).toBe(false);
+    expect(existsSync(queue.getStates()[0].outputPath!)).toBe(true);
+  });
+
   it('runs up to the configured number of FFmpeg processes', async () => {
     const children: FakeProcess[] = [];
     const spawnProcess = vi.fn((_command: string, args: string[]) => {

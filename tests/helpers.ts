@@ -5,7 +5,8 @@ import { AppStateStore } from '../server/state.js';
 /** A 1080p30 60s video whose size matches the given bitrate. */
 export function file(path: string, kbps = 2000, extra: Partial<MediaFileInfo> = {}): MediaFileInfo {
   return {
-    path, rootFolder: '/in', kind: 'video', width: 1920, height: 1080, fps: 30,
+    path, rootFolder: '/in', kind: 'video', width: 1920, height: 1080,
+    codedWidth: 1920, codedHeight: 1080, rotation: 0, fps: 30,
     sampleRate: 48000, channels: 2, audioKbps: 128,
     kbps, size: kbps * 125 * 60, duration: 60,
     codec: 'h264', ...extra,
@@ -14,14 +15,16 @@ export function file(path: string, kbps = 2000, extra: Partial<MediaFileInfo> = 
 
 export function image(path: string, size: number, width = 4032, height = 3024): MediaFileInfo {
   return {
-    path, rootFolder: '/in', kind: 'image', width, height, fps: 0,
+    path, rootFolder: '/in', kind: 'image', width, height,
+    codedWidth: width, codedHeight: height, rotation: 0, fps: 0,
     sampleRate: 0, channels: 0, kbps: 0, size, duration: 0, codec: 'mjpeg',
   };
 }
 
 export function audio(path: string, kbps = 128, sampleRate = 48000, channels = 2): MediaFileInfo {
   return {
-    path, rootFolder: '/in', kind: 'audio', width: 0, height: 0, fps: 0,
+    path, rootFolder: '/in', kind: 'audio', width: 0, height: 0,
+    codedWidth: 0, codedHeight: 0, rotation: 0, fps: 0,
     sampleRate, channels, audioKbps: kbps,
     kbps, size: kbps * 125 * 60, duration: 60, codec: 'opus',
   };

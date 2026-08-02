@@ -164,7 +164,7 @@ export class ViewModel {
 
   setOverride(
     map: 'group' | 'file', key: string,
-    field: keyof EncodeSettings, value: number | string | undefined,
+    field: keyof EncodeSettings, value: number | string | boolean | undefined,
   ): void {
     const overrides = map === 'group' ? this.groupOverrides : this.fileOverrides;
     const o = { ...overrides.get(key) };
