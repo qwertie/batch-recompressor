@@ -34,7 +34,7 @@ describe('ViewModel', () => {
     vm.exclude('/in/a.mp4');
 
     expect(vm.selection.kind).toBe('group');
-    expect(vm.selection).not.toEqual({ kind: 'group', key: group.key });
+    expect(vm.selection).toEqual({ kind: 'group', key: group.key });
     expect(vm.selectedFiles.map(file => file.path)).toEqual(['/in/b.mp4']);
 
     vm.exclude('/in/b.mp4');

@@ -5,7 +5,7 @@ export interface FileGroup {
   /** e.g. "1920x1080 ~28.4fps ~0.92 b/s/px (17)" */
   label: string;
   key: string;
-  /** Representative (median) density of the group. */
+  /** Arithmetic mean density of the group. */
   density: number;
   files: MediaFileInfo[];
 }
@@ -37,10 +37,14 @@ function bucketLabel(f: MediaFileInfo, o: GroupingOptions): string {
     : 'video';
 }
 
+function averageDensity(files: MediaFileInfo[]): number {
+  return files.reduce((sum, file) => sum + density(file), 0) / files.length;
+}
+
 /**
  * Group files by kind (+resolution/fps per options), then split each bucket
- * into data-anchored density clusters. A new cluster starts when the next
- * sorted file is more than 25% above the current cluster's median, so adjacent
+ * into density clusters. A new cluster starts when the next sorted file is
+ * more than 25% above the current cluster's average, so adjacent
  * cluster representatives are meaningfully separated without fixed bands.
  */
 export function groupFiles(
@@ -58,9 +62,10 @@ export function groupFiles(
   for (const [label, bucket] of buckets) {
     bucket.sort((a, b) => density(a) - density(b));
     let cluster: MediaFileInfo[] = [];
+    let clusterIndex = 0;
     const flush = () => {
       if (cluster.length === 0) return;
-      const d = density(cluster[Math.floor(cluster.length / 2)]);
+      const d = averageDensity(cluster);
       const shown = d >= 10 ? Math.round(d) : d.toFixed(2);
       const averageFps = cluster[0].kind === 'video' && options.byFps
         ? cluster.reduce((sum, f) => sum + f.fps, 0) / cluster.length
@@ -73,16 +78,14 @@ export function groupFiles(
         : '';
       groups.push({
         label: `${displayLabel}${fpsDetail} ~${shown} ${densityUnit(cluster[0].kind)} (${cluster.length})`,
-        key: `${label}@${density(cluster[0])}`,
+        key: `${label}@${clusterIndex++}`,
         density: d,
         files: cluster,
       });
       cluster = [];
     };
     for (const f of bucket) {
-      const representative = cluster.length > 0
-        ? density(cluster[Math.floor(cluster.length / 2)])
-        : 0;
+      const representative = cluster.length > 0 ? averageDensity(cluster) : 0;
       if (cluster.length > 0
         && density(f) > representative * (1 + DENSITY_CLUSTER_GAP)) flush();
       cluster.push(f);

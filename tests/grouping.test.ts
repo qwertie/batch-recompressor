@@ -89,14 +89,26 @@ describe('groupFiles', () => {
     expect(groups[0].files).toHaveLength(4);
   });
 
-  it('uses exact cluster anchors as keys rather than rounded display densities', () => {
+  it('shows the arithmetic mean density rather than one member density', () => {
     const atDensity = (path: string, d: number) => file(path, d * 1920 * 1080 / 1000);
-    const groups = groupFiles([
-      atDensity('/a.mp4', 10),
-      atDensity('/b.mp4', 14),
+    const [group] = groupFiles([
+      atDensity('/a.mp4', 1),
+      atDensity('/b.mp4', 1.2),
     ]);
+    expect(group.density).toBeCloseTo(1.1);
+    expect(group.label).toContain('~1.10 b/s/px');
+  });
+
+  it('uses cluster positions as keys instead of a first-member density anchor', () => {
+    const atDensity = (path: string, d: number) => file(path, d * 1920 * 1080 / 1000);
+    const low = atDensity('/a.mp4', 10);
+    const high = atDensity('/b.mp4', 14);
+    const groups = groupFiles([low, high]);
     expect(groups).toHaveLength(2);
     expect(new Set(groups.map(g => g.key)).size).toBe(2);
+    expect(groupFiles([low])[0].key).toBe(groupFiles([
+      atDensity('/replacement.mp4', 11),
+    ])[0].key);
   });
 
   it('never mixes media kinds in one group', () => {
