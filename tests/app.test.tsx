@@ -192,4 +192,29 @@ describe('App', () => {
     await waitFor(() => expect((fetcher as any).mock.calls.filter(
       (c: any[]) => String(c[0]).includes('/api/reveal'))).toHaveLength(2));
   });
+
+  it('renders at most 100 file rows while actions still cover the full selection', async () => {
+    const files = Array.from({ length: 205 }, (_, index) =>
+      file(`/in/file-${String(index).padStart(3, '0')}.mp4`));
+    const vm = makeVM(files);
+    await vm.addFolder('/in');
+    render(<App vm={vm} />);
+
+    const table = screen.getByTestId('file-table') as HTMLTableElement;
+    expect(table.tBodies[0].rows).toHaveLength(100);
+    expect(table.textContent).toContain('/in/file-000.mp4');
+    expect(table.textContent).not.toContain('/in/file-100.mp4');
+    expect(screen.getByRole('button', { name: /Start \(205\)/ })).toBeTruthy();
+    expect(screen.getByText('Showing 1-100 of 205')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next file page' }));
+    expect(table.tBodies[0].rows).toHaveLength(100);
+    expect(table.textContent).toContain('/in/file-100.mp4');
+    expect(table.textContent).not.toContain('/in/file-000.mp4');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next file page' }));
+    expect(table.tBodies[0].rows).toHaveLength(5);
+    expect(table.textContent).toContain('/in/file-204.mp4');
+    expect(screen.getByText('Showing 201-205 of 205')).toBeTruthy();
+  });
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { styled } from '../styled.js';
 import type { ViewModel } from '../viewmodel.js';
@@ -34,6 +34,10 @@ const Btn = styled('button')`
 const ActionRow = styled('div')`
   display: flex; align-items: center; margin-top: 16px;
 `;
+const Pager = styled('div')`
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  & button { margin-right: 0; }
+`;
 const StopBtn = styled(Btn)`margin-left: auto; margin-right: 0;`;
 const Table = styled('table')`
   border-collapse: collapse; margin-top: 12px; width: 100%;
@@ -62,6 +66,11 @@ const Bar = styled('div')`
   height: 4px; background: #333; border-radius: 2px; margin-top: 2px; width: 120px;
   & > div { height: 100%; background: #4da3ff; border-radius: 2px; }
 `;
+
+// Keep the number of painted rows bounded. A large table can push a transient
+// Chromium/AMD compositor fault into system-wide GUI stalls. Do not raise this
+// without re-running scripts/repro-edge-compositor-stall.md.
+const FILE_TABLE_PAGE_SIZE = 100;
 
 function fmtSize(bytes: number): string {
   if (bytes >= 1 << 30) return (bytes / (1 << 30)).toFixed(2) + ' GB';
@@ -157,11 +166,27 @@ const FileRow = observer(function FileRow(props: {
   </tr>;
 });
 
-export const DetailPage = observer(function DetailPage(props: { vm: ViewModel }) {
+export const DetailPage = observer(function DetailPage(props: {
+  vm: ViewModel;
+  /** Used by the standalone repro to restore the old, unsafe unbounded table. */
+  unsafeFileTablePageSize?: number;
+}) {
   const { vm } = props;
   const sel = vm.selection;
   const files = vm.selectedFiles;
   const [folderInput, setFolderInput] = useState('');
+  const [filePage, setFilePage] = useState(0);
+  const pageSize = Math.max(
+    1, Math.floor(props.unsafeFileTablePageSize ?? FILE_TABLE_PAGE_SIZE),
+  );
+  const pageCount = Math.max(1, Math.ceil(files.length / pageSize));
+  const pageIndex = Math.min(filePage, pageCount - 1);
+  const pageStart = pageIndex * pageSize;
+  const renderedFiles = files.slice(pageStart, pageStart + pageSize);
+  const selectionKey = sel.kind === 'root'
+    ? 'root'
+    : sel.kind === 'group' ? `group:${sel.key}` : `file:${sel.path}`;
+  useEffect(() => setFilePage(0), [selectionKey]);
   const addFolder = () => { if (folderInput) { vm.addFolder(folderInput); setFolderInput(''); } };
   const processingFiles = files.filter(f => vm.statusOf(f.path) === 'processing');
   const processingCount = processingFiles.length;
@@ -327,7 +352,21 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       <Btn onClick={() => vm.cancelQueue(files)} disabled={!enqueued}>Cancel queue</Btn>
       {processingCount > 0 && <StopBtn onClick={stopCurrent}>■ Stop</StopBtn>}
     </ActionRow>
-    <Table>
+    {files.length > pageSize && <Pager aria-label="File table pages">
+      <span>
+        Showing {pageStart + 1}-{Math.min(pageStart + pageSize, files.length)} of {files.length}
+      </span>
+      <Btn aria-label="Previous file page" disabled={pageIndex === 0}
+        onClick={() => setFilePage(Math.max(0, pageIndex - 1))}>
+        Previous
+      </Btn>
+      <span>Page {pageIndex + 1} of {pageCount}</span>
+      <Btn aria-label="Next file page" disabled={pageIndex === pageCount - 1}
+        onClick={() => setFilePage(Math.min(pageCount - 1, pageIndex + 1))}>
+        Next
+      </Btn>
+    </Pager>}
+    <Table data-testid="file-table">
       <thead><tr>
         <th>File</th><th>Size</th>
         <th><Tip tip={DensityTip}>Density</Tip></th>
@@ -340,7 +379,7 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         <th>Status</th><th></th>
       </tr></thead>
       <tbody>
-        {files.map(file =>
+        {renderedFiles.map(file =>
           <FileRow key={file.path} vm={vm} file={file} showExclude={sel.kind !== 'file'} />)}
       </tbody>
     </Table>
