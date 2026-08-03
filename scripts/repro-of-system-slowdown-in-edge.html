@@ -1,11 +1,17 @@
 <!--
-Conditional system-slowdown repro, using synthetic data and no backend/filesystem:
-- Run in Microsoft Edge with hardware acceleration/compositing enabled.
-- Edge's GPU process/graphics driver must be in the transient affected state.
-  It reproduced on AMD Radeon 8060S driver 32.0.12064.27; a fresh Edge GPU
-  process was often clean, so a clean run does not disprove the bug.
-- The companion module deliberately restores the old 1,029-row real app table.
-  The production app is fixed at 100 painted rows, which was clean in testing.
-See repro-edge-compositor-stall.md for evidence and conclusions.
+Standalone conditional repro: open this file directly in hardware-accelerated
+Microsoft Edge, move the mouse when prompted, and keep moving until Done. It
+needs no build, packages, server, backend, filesystem/media access, React, or
+Batch Recompressor code.
+
+Required condition: Edge's GPU process/graphics driver must already be in the
+transient affected state. This occurred with AMD Radeon 8060S driver
+32.0.12064.27. A fresh Edge GPU process was often clean, so a clean run does
+not disprove the bug. The table is hidden until the first mouse movement.
+
+The non-comment code is the smallest candidate distilled from the known exact
+frontend reproduction: the old content-sized, collapsed 1,029-row table;
+descendant-heavy cells; an initial reveal; and Rescan start/completion
+invalidations. Append #fixed for the proposed table-layout:fixed control case.
 -->
-<!doctype html><div id=root></div><div id=probe>Move mouse to start</div><script type=module src=/scripts/repro-edge-compositor-stall.tsx></script>
+<!doctype html><style>*{box-sizing:border-box}body{margin:0;background:#1e1e1e;color:#ddd;font:14px system-ui}button{color:#8fc7ff;background:none;border:0}#s{height:110vh}table{border-collapse:collapse;width:100%}td,th{padding:3px 10px;text-align:left;border-bottom:1px solid #333}.t>span+span{display:none}svg{width:14px}.h{visibility:hidden}#p{position:fixed;right:18px;top:18px;padding:10px;background:#000;color:aquamarine;border:2px solid white}</style><button id=b>Rescan</button><div id=s></div><table class=h id=q><thead><tr><th>File</th><th>Size</th><th>Density</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody id=t></tbody></table><output id=p>Move mouse to start</output><script>let n=0,m='Waiting',P='D:\\Synthetic\\Pictures\\2023',z=x=>new Promise(r=>setTimeout(r,x)),R=()=>{let s='';for(let i=0;i<1029;i++){let f=`${P}\\Folder ${i%37}\\A deliberately descriptive synthetic filename ${String(i).padStart(4,0)}.mp4`;s+=`<tr><td><button>${f}</button></td><td>${10+i%900} MB</td><td><span class=t><span>${(1+i%30/10).toFixed(2)} b/s/px</span><span><b>Planned FFmpeg command</b><code>ffmpeg -i "${f}" -c:v libsvtav1 incomplete.output.mkv</code></span></span><button><svg viewBox="0 0 16 16"><path d="M5 1h8v10h-2V3H5V1M2 5h8v10H2z"/></svg></button></td><td><span class=t><span>~${2+i%80} MB</span><span>Target density ${(i%20/10).toFixed(2)}</span></span></td><td>notQueued</td><td><button>Exclude</button></td></tr>`}return s};t.innerHTML=R();if(location.hash)q.style.tableLayout='fixed';setInterval(()=>p.textContent=`${m} - tick ${++n}`,15);onmousemove=async()=>{onmousemove=null;q.className='';m=location.hash?'Fixed-layout control':'Initial paint';await z(700);for(let i=1;i<4;i++){m=`Rescan ${i}/3 start`;b.textContent='Scanning...';await z(400);m=`Rescan ${i}/3 completion`;t.innerHTML=R();b.textContent='Rescan';await z(700)}m='Done'};</script>

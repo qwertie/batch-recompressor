@@ -9,7 +9,6 @@
     "prestart": "tsx scripts/check-ffmpeg.ts",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
-    "repro:compositor": "vite --open /scripts/repro-of-system-slowdown-in-edge.html",
     "build": "vite build",
     "start": "tsx server/index.ts",
     "test": "vitest run",

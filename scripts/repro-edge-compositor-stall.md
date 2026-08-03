@@ -1,71 +1,46 @@
-# Chromium compositor stall reproduction
+# Edge system-slowdown reproduction
 
-This reproduces the frontend workload which accompanied the system-wide mouse
-and window stalls. It uses the real Batch Recompressor React components, but
-all 1,029 media records and all rescan responses are generated in memory. It
-does not start the backend, read media, access `D:`, run FFmpeg, or call
-FFprobe.
+Open `repro-of-system-slowdown-in-edge.html` directly in Microsoft Edge. It is
+a self-contained HTML file with inline vanilla JavaScript: no build, packages,
+web server, application backend, filesystem scan, FFprobe, or FFmpeg.
 
-## Run
+Move the mouse when prompted and keep moving through the three short Rescan
+cycles. Delayed/jumping desktop mouse movement and delayed native-window
+updates constitute a positive reproduction. The on-page JavaScript counter
+may continue smoothly during the system slowdown.
 
-From the repository root:
+## Conditions
 
-```powershell
-npm.cmd run repro:compositor
-```
+- Edge must have hardware acceleration/compositing enabled.
+- Its GPU process and graphics driver must be in the transient affected state.
+  The state occurred on AMD Radeon 8060S driver 32.0.12064.27, but disappeared
+  after restarting Edge's GPU process.
+- The large table must be paintable. The repro hides it until the first mouse
+  movement so the observer is ready for its initial paint.
 
-This opens `scripts/repro-of-system-slowdown-in-edge.html`.
+A fresh Edge process commonly runs clean, so a clean trial does not disprove
+the issue. Append `#fixed` to the file URL to run the same workload with
+`table-layout: fixed`.
 
-## Conditions required to reproduce
+## Minimal workload and conclusions
 
-- Microsoft Edge must be using hardware acceleration/compositing.
-- Edge's GPU process and the graphics driver must be in the transient affected
-  state. It reproduced on AMD Radeon 8060S driver 32.0.12064.27, but a fresh
-  Edge GPU process was often clean.
-- The large real-app table must be paintable. The companion module deliberately
-  restores the old unbounded 1,029-row table; production no longer does this.
+The file is a reduced candidate distilled from the exact frontend reproduction:
+1,029 content-sized collapsed-table rows with the file row's nested buttons,
+tips and SVG; initial paint; and the two Rescan invalidations. Generic static
+tables and synthetic div/React trees did not reproduce reliably. This new
+reduction must therefore be tried in an affected GPU context; failure there
+would mean that the reduction removed another necessary part of the trigger.
 
-A clean run outside those conditions does not disprove the bug.
+The original backend-free application reproduced system-wide GUI probe
+timeouts, whereas the same page in a fresh Edge GPU process did not. Firefox
+and Edge with graphics acceleration disabled were clean. Hiding the real table
+was clean, and in-page timers/video could remain smooth while native input and
+other applications stalled. The evidence therefore points to a transient
+Chromium hardware-compositor/AMD-driver failure aggravated by the large real
+table's layout/paint work, rather than scanning, disk, CPU, memory, FFprobe,
+FFmpeg, or the JavaScript event loop.
 
-Move the mouse when the flashing prompt appears and keep moving through the
-three short rescans. A positive reproduction is delayed/jumping desktop mouse
-movement and delayed native window updates. The counter can remain smooth; in
-the recorded incidents, browser timers and video playback often continued
-normally while desktop input and other native windows stalled.
-
-This is a conditional reproduction. The strongest exact-frontend run happened
-inside a long-lived Edge GPU context, while both a fresh Edge profile/process
-and the formerly bad profile after restarting its GPU process were clean. A
-clean run therefore does not falsify the issue. Restart Edge between trials if
-you need to stop a bad run; disabling browser graphics acceleration also
-prevented the stalls in testing.
-
-## Observations
-
-The investigation found:
-
-- The exact backend-free frontend reproduced the stall: 88 of 176 Edge GUI
-  probes timed out, alongside 103 Task Manager and 41 Explorer timeouts.
-- The same page in a fresh Edge process had zero probe timeouts.
-- Firefox and Edge with graphics acceleration disabled were clean.
-- Edge with GPU rasterization disabled but hardware compositing retained was
-  still bad: the measured mouse-event gap reached 10.5 seconds.
-- Hiding the real table with `visibility: hidden` was clean. Rendering 100 rows
-  was clean, while 600 and 1,029 rows reproduced increasingly severe stalls in
-  the affected context.
-- Generic static tables and synthetic React/Goober tables were insufficient by
-  themselves. The real, descendant-heavy file rows were the reliable workload
-  once the Chromium GPU context entered the bad state.
-
-## Conclusion and mitigation
-
-The evidence points to a transient Chromium hardware-compositor/AMD graphics
-driver failure, not CPU, memory, disk, scanning, FFprobe, or the browser's
-JavaScript event loop. Batch Recompressor's large painted file table was a
-stressor which crossed the failure threshold, not a sufficient root cause on
-its own.
-
-Production therefore paginates the file table at 100 rows. Queue actions and
-summary calculations still apply to the complete selection; only DOM painting
-is bounded. The deliberate `unsafeFileTablePageSize` override in the TSX repro
-restores the old unbounded behavior and must not be used by the application.
+Production uses `table-layout: fixed` to bypass content-dependent whole-table
+sizing while retaining every row in one continuous table. The `#fixed` mode is
+included to test that workaround against the same standalone workload once an
+affected GPU context is available.
