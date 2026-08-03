@@ -31,6 +31,8 @@ export function Tip(props: { tip: React.ReactNode; children: React.ReactNode }) 
     if (!bubble || typeof window === 'undefined') return;
 
     // Reveal invisibly for measurement, then clamp it to the viewport.
+    const contained = Boolean(wrap.closest('[data-paint-boundary]'));
+    bubble.style.position = contained ? 'absolute' : 'fixed';
     bubble.style.display = 'block';
     bubble.style.visibility = 'hidden';
     const anchor = wrap.getBoundingClientRect();
@@ -42,8 +44,8 @@ export function Tip(props: { tip: React.ReactNode; children: React.ReactNode }) 
     if (height > 0 && top + height > window.innerHeight - 8
       && anchor.top - height - 5 >= 8)
       top = anchor.top - height - 5;
-    bubble.style.left = `${left}px`;
-    bubble.style.top = `${Math.max(8, top)}px`;
+    bubble.style.left = `${left - (contained ? anchor.left : 0)}px`;
+    bubble.style.top = `${Math.max(8, top) - (contained ? anchor.top : 0)}px`;
     bubble.style.visibility = '';
     bubble.style.display = '';
   };

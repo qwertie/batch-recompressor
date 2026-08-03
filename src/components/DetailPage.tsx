@@ -35,15 +35,16 @@ const ActionRow = styled('div')`
   display: flex; align-items: center; margin-top: 16px;
 `;
 const StopBtn = styled(Btn)`margin-left: auto; margin-right: 0;`;
-// Avoid Chromium's content-dependent whole-table sizing path, which could
-// stall the Windows GUI in an affected Edge/AMD GPU context. Standalone repro:
-// scripts/repro-of-system-slowdown-in-edge.html
 const Table = styled('table')`
   border-collapse: collapse; table-layout: fixed; margin-top: 12px; width: 100%;
   & td, & th { padding: 3px 10px; text-align: left; border-bottom: 1px solid #333; }
   & th { color: #999; font-weight: normal; }
   & th:first-child { width: 50%; }
 `;
+// Stop control/status invalidations from propagating through the large table.
+// Without this boundary Edge/AMD could stall the whole Windows GUI; see
+// scripts/repro-of-system-slowdown-in-edge.html.
+const TableBoundary = styled('div')`contain: layout paint;`;
 const StatusCell = styled('td')<{ status: string }>`
   color: ${p => ({
     notQueued: '#888', enqueued: '#c9a227', processing: '#4da3ff',
@@ -331,22 +332,24 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       <Btn onClick={() => vm.cancelQueue(files)} disabled={!enqueued}>Cancel queue</Btn>
       {processingCount > 0 && <StopBtn onClick={stopCurrent}>■ Stop</StopBtn>}
     </ActionRow>
-    <Table data-testid="file-table">
-      <thead><tr>
-        <th>File</th><th>Size</th>
-        <th><Tip tip={DensityTip}>Density</Tip></th>
-        <th><Tip tip={<span>
-          What the encode aims for: an estimated output size in target-rate
-          mode (input density ÷ ratio, clamped to the limits — e.g. a 100 MB
-          video at ratio 4 shows ~25 MB), or the quality setting when that
-          mode applies (always for images).
-        </span>}>Target</Tip></th>
-        <th>Status</th><th></th>
-      </tr></thead>
-      <tbody>
-        {files.map(file =>
-          <FileRow key={file.path} vm={vm} file={file} showExclude={sel.kind !== 'file'} />)}
-      </tbody>
-    </Table>
+    <TableBoundary data-testid="file-table-boundary" data-paint-boundary>
+      <Table data-testid="file-table">
+        <thead><tr>
+          <th>File</th><th>Size</th>
+          <th><Tip tip={DensityTip}>Density</Tip></th>
+          <th><Tip tip={<span>
+            What the encode aims for: an estimated output size in target-rate
+            mode (input density ÷ ratio, clamped to the limits — e.g. a 100 MB
+            video at ratio 4 shows ~25 MB), or the quality setting when that
+            mode applies (always for images).
+          </span>}>Target</Tip></th>
+          <th>Status</th><th></th>
+        </tr></thead>
+        <tbody>
+          {files.map(file =>
+            <FileRow key={file.path} vm={vm} file={file} showExclude={sel.kind !== 'file'} />)}
+        </tbody>
+      </Table>
+    </TableBoundary>
   </Page>;
 });

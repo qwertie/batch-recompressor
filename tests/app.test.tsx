@@ -193,7 +193,7 @@ describe('App', () => {
       (c: any[]) => String(c[0]).includes('/api/reveal'))).toHaveLength(2));
   });
 
-  it('uses fixed table layout without paginating the selection', async () => {
+  it('contains the full fixed-layout table without paginating the selection', async () => {
     const files = Array.from({ length: 101 }, (_, index) =>
       file(`/in/file-${String(index).padStart(3, '0')}.mp4`));
     const vm = makeVM(files);
@@ -205,6 +205,12 @@ describe('App', () => {
     expect(table.textContent).toContain('/in/file-000.mp4');
     expect(table.textContent).toContain('/in/file-100.mp4');
     expect(getComputedStyle(table).tableLayout).toBe('fixed');
+    expect(getComputedStyle(screen.getByTestId('file-table-boundary')).contain)
+      .toBe('layout paint');
+    const densityTip = table.tHead!.querySelector<HTMLElement>('[tabindex="0"]')!;
+    fireEvent.mouseEnter(densityTip);
+    expect(densityTip.querySelector<HTMLElement>('[role="tooltip"]')!.style.position)
+      .toBe('absolute');
     expect(screen.getByRole('button', { name: /Start \(101\)/ })).toBeTruthy();
     expect(screen.queryByLabelText('File table pages')).toBeNull();
   });

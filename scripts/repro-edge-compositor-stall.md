@@ -1,68 +1,60 @@
 # Edge system-slowdown reproduction
 
-Open `repro-of-system-slowdown-in-edge.html` directly in Microsoft Edge. It is
-a self-contained HTML file with inline vanilla JavaScript: no build, packages,
-web server, application backend, filesystem scan, FFprobe, or FFmpeg.
+Open `repro-of-system-slowdown-in-edge.html` directly in hardware-accelerated
+Microsoft Edge. Move the mouse when prompted and keep moving through the three
+short Rescan cycles and the 40-second recovery observation. The JavaScript
+counter can remain smooth while the Windows mouse and native windows stall.
 
-Move the mouse when prompted and keep moving through the three short Rescan
-cycles and the following 40-second Recovery phase. The page displays Done only
-after recovery observation is complete. Delayed/jumping desktop mouse movement
-and delayed native-window updates constitute a positive reproduction. The
-on-page JavaScript counter may continue smoothly during the system slowdown.
+Append `#contained` to apply the production control: a wrapper around the
+table with `contain: layout paint`.
 
-## Conditions
+## Reliability
 
-- Edge must have hardware acceleration/compositing enabled.
-- Its GPU process and graphics driver must be in the transient affected state.
-  The state occurred on AMD Radeon 8060S driver 32.0.12064.27, but disappeared
-  after restarting Edge's GPU process.
-- The large table must be paintable. The repro hides it until the first mouse
-  movement so the observer is ready for its initial paint.
+The standalone file is a conditional reduction. It produced a human-confirmed
+physical-mouse slowdown during the investigation, but later ran clean while an
+exact backend-free copy of the application still failed in the same dedicated
+Edge profile. A clean standalone run therefore does not disprove the bug, and
+the reduction is not claimed to contain every sufficient condition.
 
-A fresh Edge process commonly runs clean, so a clean trial does not disprove
-the issue. Append `#fixed` to the file URL to run the same workload with
-`table-layout: fixed`.
+The exact harness retained React/MobX, the captured 1,029-file view, and an
+in-memory Rescan, but used no server, filesystem, media files, FFprobe, or
+FFmpeg. It repeatedly produced the system-wide native-window stall and was used
+to validate the workaround.
 
-## Minimal workload and conclusions
+## Measured boundaries
 
-The file is the smallest version directly confirmed by a human observer to
-slow the physical mouse. It retains 1,029 content-sized, collapsed-table rows;
-six populated cells; two hidden tooltip subtrees; the copy-button SVG; the
-header and offscreen spacer; initial paint; and the two Rescan invalidations.
-Cosmetic CSS is removed.
+The native probe repeatedly sent bounded messages to Edge, Explorer, and Task
+Manager while also measuring its own scheduling delay. Representative trials:
 
-Measured reduction boundaries in the affected isolated Edge context:
+| Trial | Task Manager timeouts | Explorer timeouts | Edge timeouts | Max loop lag |
+|---|---:|---:|---:|---:|
+| Exact app, fixed table layout | 34/63 | 34/63 | 42/63 | 913 ms |
+| Button/scanning state only; snapshot unchanged | 26/51 | 24/51 | 32/51 | 1,182 ms |
+| Same view mounted with no transitions | 3/206 | 0/206 | 1/206 | 196 ms |
+| 100 rows | 4/144 | 0/144 | 3/144 | 209 ms |
+| 500 rows | 26/55 | 13/55 | 23/55 | 710 ms |
+| Contained table; button/scanning transitions | 0/163 | 0/163 | 1/163 | 219 ms |
+| Contained table; full snapshot replacements | 2/179 | 0/179 | 1/179 | 151 ms |
 
-- A further-reduced row produced 19 Edge and 6 Task Manager GUI timeouts, but
-  the human observer reported only mild slowdown with no mouse effect. Native
-  timeouts alone were therefore an insufficient acceptance criterion.
-- Removing both cell padding and the collapsed bottom border produced zero
-  timeouts; either declaration alone also produced zero.
-- Removing the command-tooltip/copy-SVG pair produced zero Edge timeouts.
-- Keeping only the tooltip or only the SVG produced zero Edge timeouts; their
-  interaction is required at this workload size.
-- Reducing the row to two populated cells or leaving four cells empty produced
-  zero timeouts.
-- Native probes did not show a large change after removing the header, spacer,
-  and second tooltip, but those removals were never separately validated
-  against the physical mouse. They are restored together to return to the last
-  mouse-confirmed version.
+`table-layout: fixed`, ordinary document scrolling, and row-level
+`content-visibility: auto` did not prevent the failure. A plain 1,029-row page
+also was not sufficient by itself; the failure has a cumulative page/paint
+threshold rather than one independently necessary widget.
 
-Generic static tables and synthetic div/React trees likewise did not reproduce
-reliably. The remaining markup and styles are retained because they belong to
-the last mouse-confirmed positive case; not because every remaining token has
-independently been proven necessary.
+## Conclusion and workaround
 
-The original backend-free application reproduced system-wide GUI probe
-timeouts, whereas the same page in a fresh Edge GPU process did not. Firefox
-and Edge with graphics acceleration disabled were clean. Hiding the real table
-was clean, and in-page timers/video could remain smooth while native input and
-other applications stalled. The evidence therefore points to a transient
-Chromium hardware-compositor/AMD-driver failure aggravated by the large real
-table's layout/paint work, rather than scanning, disk, CPU, memory, FFprobe,
-FFmpeg, or the JavaScript event loop.
+Scanning, disk I/O, FFprobe, FFmpeg, memory pressure, and the JavaScript event
+loop are not required. The evidence points to Edge/Chromium propagating a small
+control or status invalidation through the large table's layout/paint subtree,
+then hitting an AMD-driver/Windows-compositor failure that delays desktop input
+and native-window presentation.
 
-Production uses `table-layout: fixed` to bypass content-dependent whole-table
-sizing while retaining every row in one continuous table. The `#fixed` mode is
-included to test that workaround against the same standalone workload once an
-affected GPU context is available.
+Production retains every row in one continuous table and wraps the table in:
+
+```css
+contain: layout paint;
+```
+
+This creates a layout/paint invalidation boundary without pagination or
+application-level virtualization. It passed both the button-only and complete
+snapshot-replacement trials above.

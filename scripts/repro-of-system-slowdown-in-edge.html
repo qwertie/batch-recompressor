@@ -4,18 +4,15 @@ Microsoft Edge, move the mouse when prompted, and keep moving until Done. It
 needs no build, packages, server, backend, filesystem/media access, React, or
 Batch Recompressor code.
 
-Required condition: Edge's GPU process/graphics driver must already be in the
-transient affected state. This occurred with AMD Radeon 8060S driver
-32.0.12064.27. A fresh Edge GPU process was often clean, so a clean run does
-not disprove the bug. The table is hidden until the first mouse movement.
-
-This is the smallest version directly confirmed by a human observer to slow
-the physical mouse, rather than merely causing mild native-window probe
-timeouts. Append #fixed for the proposed table-layout:fixed control case.
+This reduction was directly observed to slow the physical mouse, but later
+runs were clean even when the exact backend-free app still failed. It is thus
+conditional and does not contain every sufficient condition. The table is
+hidden until the first mouse movement. Append #contained to apply the verified
+production workaround, contain:layout paint, around the table.
 
 Whitespace and comments are intentionally generous. Only executable/markup
 tokens are minimized. The classic script deliberately uses elements' IDs as
-window properties: b = button, q = table, t = tbody, and p = output. In the
+window properties: b = button, q = table, t = tbody, w = wrapper, and p = output. In the
 script, n = counter, m = phase message, P = path prefix, z = delay, and
 R = render rows.
 -->
@@ -28,6 +25,7 @@ R = render rows.
 
   table {
     border-collapse: collapse;
+    table-layout: fixed;
     width: 100%
   }
 
@@ -49,9 +47,14 @@ R = render rows.
   }
 
   #p {
-    display: block;
+    position: fixed;
+    top: 0;
     width: 320px;
     height: 24px
+  }
+
+  #b {
+    margin-top: 24px
   }
 </style>
 
@@ -59,7 +62,7 @@ R = render rows.
 <button id=b>Rescan</button>
 <div id=s></div>
 
-<table class=h id=q>
+<div id=w><table class=h id=q>
   <thead>
     <tr>
       <th>File</th>
@@ -71,7 +74,7 @@ R = render rows.
     </tr>
   </thead>
   <tbody id=t></tbody>
-</table>
+</table></div>
 
 <script>
   let n = 0,
@@ -118,14 +121,14 @@ R = render rows.
   t.innerHTML = R();
 
   if (location.hash)
-    q.style.tableLayout = 'fixed';
+    w.style.contain = 'layout paint';
 
   setInterval(() => p.textContent = `${m} - tick ${++n}`, 15);
 
   onmousemove = async () => {
     onmousemove = null;
     q.className = '';
-    m = location.hash ? 'Fixed-layout control' : 'Initial paint';
+    m = location.hash ? 'Contained control' : 'Initial paint';
     await z(700);
 
     for (let i = 1; i < 4; i++) {
