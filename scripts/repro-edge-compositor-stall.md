@@ -14,6 +14,19 @@ From the repository root:
 npm.cmd run repro:compositor
 ```
 
+This opens `scripts/repro-of-system-slowdown-in-edge.html`.
+
+## Conditions required to reproduce
+
+- Microsoft Edge must be using hardware acceleration/compositing.
+- Edge's GPU process and the graphics driver must be in the transient affected
+  state. It reproduced on AMD Radeon 8060S driver 32.0.12064.27, but a fresh
+  Edge GPU process was often clean.
+- The large real-app table must be paintable. The companion module deliberately
+  restores the old unbounded 1,029-row table; production no longer does this.
+
+A clean run outside those conditions does not disprove the bug.
+
 Move the mouse when the flashing prompt appears and keep moving through the
 three short rescans. A positive reproduction is delayed/jumping desktop mouse
 movement and delayed native window updates. The counter can remain smooth; in

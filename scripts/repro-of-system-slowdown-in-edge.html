@@ -1,0 +1,11 @@
+<!--
+Conditional system-slowdown repro, using synthetic data and no backend/filesystem:
+- Run in Microsoft Edge with hardware acceleration/compositing enabled.
+- Edge's GPU process/graphics driver must be in the transient affected state.
+  It reproduced on AMD Radeon 8060S driver 32.0.12064.27; a fresh Edge GPU
+  process was often clean, so a clean run does not disprove the bug.
+- The companion module deliberately restores the old 1,029-row real app table.
+  The production app is fixed at 100 painted rows, which was clean in testing.
+See repro-edge-compositor-stall.md for evidence and conclusions.
+-->
+<!doctype html><div id=root></div><div id=probe>Move mouse to start</div><script type=module src=/scripts/repro-edge-compositor-stall.tsx></script>
