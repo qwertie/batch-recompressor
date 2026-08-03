@@ -49,15 +49,13 @@ R = render rows.
   }
 
   #p {
-    position: fixed;
-    top: 0
-  }
-
-  #b {
-    margin-top: 24px
+    display: block;
+    width: 320px;
+    height: 24px
   }
 </style>
 
+<output id=p>Move mouse to start</output>
 <button id=b>Rescan</button>
 <div id=s></div>
 
@@ -74,8 +72,6 @@ R = render rows.
   </thead>
   <tbody id=t></tbody>
 </table>
-
-<output id=p>Move mouse to start</output>
 
 <script>
   let n = 0,
