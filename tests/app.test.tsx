@@ -207,6 +207,10 @@ describe('App', () => {
     expect(getComputedStyle(table).tableLayout).toBe('fixed');
     expect(getComputedStyle(screen.getByTestId('file-table-boundary')).contain)
       .toBe('layout paint');
+    const statusContent = table.tBodies[0].rows[0].cells[4]
+      .querySelector<HTMLElement>('div')!;
+    expect(getComputedStyle(statusContent).contain).toBe('strict');
+    expect(getComputedStyle(statusContent).height).toBe('28px');
     const densityTip = table.tHead!.querySelector<HTMLElement>('[tabindex="0"]')!;
     fireEvent.mouseEnter(densityTip);
     expect(densityTip.querySelector<HTMLElement>('[role="tooltip"]')!.style.position)

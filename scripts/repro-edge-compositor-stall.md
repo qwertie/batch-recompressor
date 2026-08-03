@@ -35,6 +35,9 @@ Manager while also measuring its own scheduling delay. Representative trials:
 | 500 rows | 26/55 | 13/55 | 23/55 | 710 ms |
 | Contained table; button/scanning transitions | 0/163 | 0/163 | 1/163 | 219 ms |
 | Contained table; full snapshot replacements | 2/179 | 0/179 | 1/179 | 151 ms |
+| Direct SVT-AV1 encode; no app transitions | 0/318 | 0/318 | 0/318 | 211 ms |
+| Contained table; enqueue all + process/finish one | 14/54 | 14/54 | 23/54 | 1,144 ms |
+| Same Start trial; strict 28px status contents | 3/162 | 0/162 | 0/162 | 157 ms |
 
 `table-layout: fixed`, ordinary document scrolling, and row-level
 `content-visibility: auto` did not prevent the failure. A plain 1,029-row page
@@ -44,10 +47,11 @@ threshold rather than one independently necessary widget.
 ## Conclusion and workaround
 
 Scanning, disk I/O, FFprobe, FFmpeg, memory pressure, and the JavaScript event
-loop are not required. The evidence points to Edge/Chromium propagating a small
-control or status invalidation through the large table's layout/paint subtree,
-then hitting an AMD-driver/Windows-compositor failure that delays desktop input
-and native-window presentation.
+loop are not required. A direct encode was clean even though SVT-AV1 peaked at
+41,552 handles, 137 threads, and 2.98 GB. The evidence points to Edge/Chromium
+propagating control or status invalidations through the large table's
+layout/paint subtree, then hitting an AMD-driver/Windows-compositor failure that
+delays desktop input and native-window presentation.
 
 Production retains every row in one continuous table and wraps the table in:
 
@@ -57,4 +61,14 @@ contain: layout paint;
 
 This creates a layout/paint invalidation boundary without pagination or
 application-level virtualization. It passed both the button-only and complete
-snapshot-replacement trials above.
+snapshot-replacement trials above. Because Start changes every status inside
+that boundary and processing adds a progress bar, each status body additionally
+uses a fixed-height strict containment box:
+
+```css
+contain: strict;
+height: 28px;
+```
+
+That prevents queue, progress, and finish changes from invalidating table
+geometry while preserving every per-file status.

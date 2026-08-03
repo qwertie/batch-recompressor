@@ -45,7 +45,9 @@ const Table = styled('table')`
 // Without this boundary Edge/AMD could stall the whole Windows GUI; see
 // scripts/repro-of-system-slowdown-in-edge.html.
 const TableBoundary = styled('div')`contain: layout paint;`;
-const StatusCell = styled('td')<{ status: string }>`
+// Queue/progress changes stay within a fixed box instead of resizing the table.
+const StatusContent = styled('div')<{ status: string }>`
+  contain: strict; height: 28px; overflow: hidden; text-overflow: ellipsis;
   color: ${p => ({
     notQueued: '#888', enqueued: '#c9a227', processing: '#4da3ff',
     finished: '#5dbb63', error: '#e05555',
@@ -140,23 +142,25 @@ const FileRow = observer(function FileRow(props: {
       {targetDensity(f, eff).toFixed(2)} {densityUnit(f.kind)}
       {!usesDensity && ' (not used in quality mode)'}
     </span>}>{targetLabel}</Tip></td>
-    <StatusCell status={status}>
-      {revealOutput
-        ? <StatusLink title="Show output in file manager"
-            onClick={() => vm.revealInFileManager(job.outputPath!)}>
-            {outputLabel}
+    <td>
+      <StatusContent status={status} title={outputLabel}>
+        {revealOutput
+          ? <StatusLink title="Show output in file manager"
+              onClick={() => vm.revealInFileManager(job.outputPath!)}>
+              {outputLabel}
+            </StatusLink>
+          : outputLabel}
+        {existingOutput && <>
+          {' '}
+          <StatusLink title="Show existing output in file manager"
+            onClick={() => vm.revealInFileManager(existingOutput.outputPath)}>
+            Exists ({fmtSize(existingOutput.outputSize)})
           </StatusLink>
-        : outputLabel}
-      {existingOutput && <>
-        {' '}
-        <StatusLink title="Show existing output in file manager"
-          onClick={() => vm.revealInFileManager(existingOutput.outputPath)}>
-          Exists ({fmtSize(existingOutput.outputSize)})
-        </StatusLink>
-      </>}
-      {status === 'processing' &&
-        <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
-    </StatusCell>
+        </>}
+        {status === 'processing' &&
+          <Bar><div style={{ width: `${(job?.progress ?? 0) * 100}%` }} /></Bar>}
+      </StatusContent>
+    </td>
     <td>{showExclude &&
       <Btn title="Exclude this" onClick={() => vm.exclude(f.path)}>Exclude</Btn>}</td>
   </tr>;
