@@ -9,11 +9,9 @@ transient affected state. This occurred with AMD Radeon 8060S driver
 32.0.12064.27. A fresh Edge GPU process was often clean, so a clean run does
 not disprove the bug. The table is hidden until the first mouse movement.
 
-The non-comment code is the smallest empirically positive reduction reached
-before further GUI trials were blocked: a content-sized, collapsed 1,029-row
-table; six populated cells; one hidden command tooltip plus copy SVG; an
-initial reveal; and Rescan start/completion invalidations. Append #fixed for
-the proposed table-layout:fixed control case.
+This is the smallest version directly confirmed by a human observer to slow
+the physical mouse, rather than merely causing mild native-window probe
+timeouts. Append #fixed for the proposed table-layout:fixed control case.
 
 Whitespace and comments are intentionally generous. Only executable/markup
 tokens are minimized. The classic script deliberately uses elements' IDs as
@@ -24,12 +22,16 @@ R = render rows.
 <!doctype html>
 
 <style>
+  #s {
+    height: 110vh
+  }
+
   table {
     border-collapse: collapse;
     width: 100%
   }
 
-  td {
+  td, th {
     padding: 3px 10px;
     border-bottom: 1px solid #333
   }
@@ -50,11 +52,26 @@ R = render rows.
     position: fixed;
     top: 0
   }
+
+  #b {
+    margin-top: 24px
+  }
 </style>
 
 <button id=b>Rescan</button>
+<div id=s></div>
 
 <table class=h id=q>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Size</th>
+      <th>Density</th>
+      <th>Target</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
   <tbody id=t></tbody>
 </table>
 
@@ -88,7 +105,12 @@ R = render rows.
                 </svg>
               </button>
             </td>
-            <td>~${2 + i % 80} MB</td>
+            <td>
+              <span class=t>
+                <span>~${2 + i % 80} MB</span>
+                <span>Target density ${(i % 20 / 10).toFixed(2)}</span>
+              </span>
+            </td>
             <td>notQueued</td>
             <td><button>Exclude</button></td>
           </tr>`
@@ -110,16 +132,18 @@ R = render rows.
     m = location.hash ? 'Fixed-layout control' : 'Initial paint';
     await z(700);
 
-    for (let i = 1; i < 9; i++) {
-      m = `Rescan ${i}/8 start`;
+    for (let i = 1; i < 4; i++) {
+      m = `Rescan ${i}/3 start`;
       b.textContent = 'Scanning...';
       await z(400);
-      m = `Rescan ${i}/8 completion`;
+      m = `Rescan ${i}/3 completion`;
       t.innerHTML = R();
       b.textContent = 'Rescan';
-      await z(700)
+      await z(0)
     }
 
+    m = 'Recovery';
+    await z(40000);
     m = 'Done'
   };
 </script>

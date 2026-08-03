@@ -4,12 +4,11 @@ Open `repro-of-system-slowdown-in-edge.html` directly in Microsoft Edge. It is
 a self-contained HTML file with inline vanilla JavaScript: no build, packages,
 web server, application backend, filesystem scan, FFprobe, or FFmpeg.
 
-Move the mouse when prompted and keep moving through the eight short Rescan
-cycles. Continue observing the system for at least 40 seconds afterward:
-the strongest native-window timeout period sometimes began after the page
-already displayed Done. Delayed/jumping desktop mouse movement and delayed
-native-window updates constitute a positive reproduction. The on-page
-JavaScript counter may continue smoothly during the system slowdown.
+Move the mouse when prompted and keep moving through the three short Rescan
+cycles and the following 40-second Recovery phase. The page displays Done only
+after recovery observation is complete. Delayed/jumping desktop mouse movement
+and delayed native-window updates constitute a positive reproduction. The
+on-page JavaScript counter may continue smoothly during the system slowdown.
 
 ## Conditions
 
@@ -26,15 +25,17 @@ the issue. Append `#fixed` to the file URL to run the same workload with
 
 ## Minimal workload and conclusions
 
-The file is the smallest empirically positive reduction reached before further
-GUI trials were blocked. It retains 1,029 content-sized, collapsed-table rows;
-six populated cells; one hidden command-tooltip subtree plus its copy-button
-SVG; initial paint; and the two Rescan invalidations. It removes all cosmetic
-CSS, the table header, the offscreen spacer, and the second tooltip subtree.
+The file is the smallest version directly confirmed by a human observer to
+slow the physical mouse. It retains 1,029 content-sized, collapsed-table rows;
+six populated cells; two hidden tooltip subtrees; the copy-button SVG; the
+header and offscreen spacer; initial paint; and the two Rescan invalidations.
+Cosmetic CSS is removed.
 
 Measured reduction boundaries in the affected isolated Edge context:
 
-- This reduced row produced 19 Edge and 6 Task Manager GUI timeouts.
+- A further-reduced row produced 19 Edge and 6 Task Manager GUI timeouts, but
+  the human observer reported only mild slowdown with no mouse effect. Native
+  timeouts alone were therefore an insufficient acceptance criterion.
 - Removing both cell padding and the collapsed bottom border produced zero
   timeouts; either declaration alone also produced zero.
 - Removing the command-tooltip/copy-SVG pair produced zero Edge timeouts.
@@ -42,13 +43,15 @@ Measured reduction boundaries in the affected isolated Edge context:
   interaction is required at this workload size.
 - Reducing the row to two populated cells or leaving four cells empty produced
   zero timeouts.
-- Removing the header and offscreen spacer did not weaken the positive signal.
+- Native probes did not show a large change after removing the header, spacer,
+  and second tooltip, but those removals were never separately validated
+  against the physical mouse. They are restored together to return to the last
+  mouse-confirmed version.
 
 Generic static tables and synthetic div/React trees likewise did not reproduce
-reliably. The remaining markup and styles are therefore retained because each
-was either part of the last measured positive case or could not be tested
-further; not because every remaining token has independently been proven
-necessary.
+reliably. The remaining markup and styles are retained because they belong to
+the last mouse-confirmed positive case; not because every remaining token has
+independently been proven necessary.
 
 The original backend-free application reproduced system-wide GUI probe
 timeouts, whereas the same page in a fresh Edge GPU process did not. Firefox
