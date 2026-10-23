@@ -203,6 +203,7 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
       </span>}>Output folder</Tip>{' '}
         <input size={50} value={vm.outputFolder} placeholder="e.g. C:/Recompressed"
           onChange={e => vm.setOutputFolder(e.target.value)} />
+        {vm.canPickFolders && <>{' '}<Btn onClick={() => vm.pickOutputFolder()}>Browse…</Btn></>}
       </label>
       <label style={{ display: 'block', margin: '4px 0' }}>
         <input type="checkbox" checked={vm.overwrite}
@@ -236,6 +237,8 @@ export const DetailPage = observer(function DetailPage(props: { vm: ViewModel })
         <Btn disabled={vm.scanning || !folderInput} onClick={addFolder}>
           {vm.scanning ? 'Scanning…' : 'Add folder'}
         </Btn>
+        {vm.canPickFolders &&
+          <Btn disabled={vm.scanning} onClick={() => vm.pickAndAddFolder()}>Browse…</Btn>}
       </div>
 
       <h3>File types to scan</h3>

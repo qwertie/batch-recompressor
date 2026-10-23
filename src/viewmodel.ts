@@ -9,6 +9,7 @@ import {
   applyStateCommand, effectiveSettingsFor, initialAppState, settingsIndex,
   type AppState, type SettingsIndex, type StateCommand, type StateSnapshot,
 } from '../shared/state.js';
+import { DESKTOP_HOST_GLOBAL, type DesktopHost } from '../shared/desktop.js';
 
 /** What the tree currently has selected: root, a group, or a single file. */
 export type Selection =
@@ -40,8 +41,10 @@ export class ViewModel {
     private fetcher: typeof fetch = fetch.bind(globalThis),
     private confirmReload: (message: string) => boolean =
       message => globalThis.confirm(message),
+    private desktop = Reflect.get(globalThis, DESKTOP_HOST_GLOBAL) as DesktopHost | undefined,
   ) {
-    makeAutoObservable(this);
+    // The host is a fixed service object, so MobX must not deep-clone it into observable state.
+    makeAutoObservable<this, 'desktop'>(this, { desktop: false });
   }
 
   // ---- derived state ----
@@ -63,6 +66,8 @@ export class ViewModel {
     return new Map(this.state.fileOverrides);
   }
   get settingsIndex(): SettingsIndex { return settingsIndex(this.state); }
+  /** Whether native folder choosers are available, i.e. whether this is the Electron app. */
+  get canPickFolders(): boolean { return this.desktop !== undefined; }
 
   get visibleFiles(): MediaFileInfo[] {
     return this.files.filter(f => !isExcluded(f.path, this.outputFolder, this.exclusions));
@@ -220,6 +225,20 @@ export class ViewModel {
     this.scanning = true;
     await this.enqueueCommand({ type: 'addFolder', folder });
     runInAction(() => { this.scanning = false; });
+  }
+
+  /** Lets the user choose a folder with a native dialog, then scans and adds it. */
+  async pickAndAddFolder(): Promise<void> {
+    const folder = await this.desktop?.pickFolder();
+    if (folder)
+      await this.addFolder(folder);
+  }
+
+  /** Lets the user choose the output folder with a native dialog. */
+  async pickOutputFolder(): Promise<void> {
+    const folder = await this.desktop?.pickFolder(this.outputFolder);
+    if (folder)
+      this.setOutputFolder(folder);
   }
 
   /** Re-scan all root folders, replacing their file lists (picks up new/removed files). */

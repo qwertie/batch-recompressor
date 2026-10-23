@@ -58,6 +58,19 @@ npm run build      # builds the UI into dist/
 npm start          # serves UI + API on http://localhost:5177
 ```
 
+### Electron desktop app
+
+```sh
+npm run electron   # builds the UI and Electron bundles, then opens the desktop app
+```
+
+The desktop app shares everything with the web version: its main process
+(`electron/main.ts`) runs the same Express backend (`server/app.ts`) on a
+private `127.0.0.1` port, and its window loads the same built client from it.
+The only difference is that native **Browse…** buttons appear next to the
+folder textboxes, via the small `DesktopHost` API in `shared/desktop.ts` that
+`electron/preload.ts` exposes. Both versions share the same state file.
+
 Tests and typechecking:
 
 ```sh

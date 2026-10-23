@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
     "predev": "tsx scripts/check-ffmpeg.ts",
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
@@ -11,6 +12,9 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "tsx server/index.ts",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-electron/main.js && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
+    "preelectron": "tsx scripts/check-ffmpeg.ts",
+    "electron": "vite build && npm run build:electron && electron .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -30,6 +34,8 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.0",
+    "electron": "^45.0.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^25.0.1",
     "tsx": "^4.19.2",
     "typescript": "^7.0.2",
